@@ -19,7 +19,9 @@ import {
   ChevronRight,
   ShieldCheck,
   FileSpreadsheet,
-  KeyRound
+  KeyRound,
+  Trash2,
+  Link as LinkIcon
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -43,9 +45,13 @@ const INITIAL_CENTRES = [
     zone: 'Madrid Norte',
     users: ['julio.benages@neural.es', 'tecnico.madrid@neural.es'],
     docs: {
-      evaluacion_riesgos: { link: 'https://sharepoint.com/eval-madrid', status: 'presente' },
-      informacion_riesgos: { link: 'https://sharepoint.com/info-madrid', status: 'presente' },
-      medidas_emergencia: { link: '', status: 'pendiente' }
+      evaluacion_riesgos: [
+        { id: 'd1', name: 'Evaluacion_Riesgos_2026_Madrid.pdf', link: 'https://sharepoint.com/eval-madrid.pdf' }
+      ],
+      informacion_riesgos: [
+        { id: 'd2', name: 'Info_Riesgos_Puestos_Madrid.pdf', link: 'https://sharepoint.com/info-madrid.pdf' }
+      ],
+      medidas_emergencia: []
     }
   },
   {
@@ -54,12 +60,35 @@ const INITIAL_CENTRES = [
     zone: 'Comunidad Valenciana',
     users: ['julio.benages@neural.es', 'tecnico.valencia@neural.es'],
     docs: {
-      evaluacion_riesgos: { link: 'https://sharepoint.com/eval-valencia', status: 'presente' },
-      informacion_riesgos: { link: '', status: 'pendiente' },
-      medidas_emergencia: { link: 'https://sharepoint.com/emerg-valencia', status: 'presente' }
+      evaluacion_riesgos: [
+        { id: 'd3', name: 'Evaluacion_Riesgos_Mestalla_v1.pdf', link: 'https://sharepoint.com/eval-valencia.pdf' }
+      ],
+      informacion_riesgos: [],
+      medidas_emergencia: [
+        { id: 'd4', name: 'Plan_Emergencia_Valencia_2026.pdf', link: 'https://sharepoint.com/emerg-valencia.pdf' }
+      ]
     }
   }
 ];
+
+// Función para extraer o limpiar el nombre del archivo desde una URL de SharePoint
+const extractFileNameFromUrl = (url) => {
+  if (!url) return '';
+  try {
+    const parsed = new URL(url);
+    const pathname = parsed.pathname;
+    const filename = pathname.split('/').pop();
+    if (filename && filename.length > 0) {
+      return decodeURIComponent(filename);
+    }
+  } catch (e) {
+    // Si no es un URL estándar completo, extraer la última parte del texto
+    const parts = url.split('/');
+    const last = parts.pop() || parts.pop();
+    if (last) return decodeURIComponent(last.split('?')[0]);
+  }
+  return 'Documento SharePoint';
+};
 
 export default function App() {
   // Autenticación
@@ -78,8 +107,10 @@ export default function App() {
   const [selectedCentre, setSelectedCentre] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Modal enlace SharePoint
-  const [editDocModal, setEditDocModal] = useState({ open: false, centreId: null, categoryKey: null, link: '' });
+  // Modal para gestionar múltiples enlaces de SharePoint
+  const [editDocModal, setEditDocModal] = useState({ open: false, centreId: null, categoryKey: null, categoryLabel: '' });
+  const [newLinkUrl, setNewLinkUrl] = useState('');
+  const [newLinkName, setNewLinkName] = useState('');
 
   // Manejo de Login
   const handleLogin = (e) => {
@@ -109,6 +140,12 @@ export default function App() {
     return centres.filter(c => c.users.includes(currentUser.email));
   }, [currentUser, centres]);
 
+  // Actualiza el centro seleccionado si cambian los datos globales
+  const currentSelectedCentre = useMemo(() => {
+    if (!selectedCentre) return null;
+    return centres.find(c => c.id === selectedCentre.id) || selectedCentre;
+  }, [centres, selectedCentre]);
+
   // Carga Masiva Excel
   const handleFileUploadCentres = (e) => {
     const file = e.target.files[0];
@@ -133,7 +170,6 @@ export default function App() {
         const zone = row[1] ? row[1].toString().trim() : 'General';
         const assignedUserEmails = [];
 
-        // Leer pares (C, D), (E, F), (G, H), (I, J), (K, L)
         const userCols = [
           { emailIdx: 2, codeIdx: 3 },
           { emailIdx: 4, codeIdx: 5 },
@@ -148,7 +184,6 @@ export default function App() {
             const code = row[codeIdx].toString().trim();
             assignedUserEmails.push(email);
 
-            // Crear usuario si no existe
             const exists = newUsers.some(u => u.email.toLowerCase() === email.toLowerCase());
             if (!exists) {
               newUsers.push({
@@ -170,9 +205,9 @@ export default function App() {
           zone: zone,
           users: assignedUserEmails,
           docs: existingIndex >= 0 ? newCentres[existingIndex].docs : {
-            evaluacion_riesgos: { link: '', status: 'pendiente' },
-            informacion_riesgos: { link: '', status: 'pendiente' },
-            medidas_emergencia: { link: '', status: 'pendiente' }
+            evaluacion_riesgos: [],
+            informacion_riesgos: [],
+            medidas_emergencia: []
           }
         };
 
@@ -190,27 +225,63 @@ export default function App() {
     reader.readAsBinaryString(file);
   };
 
-  const saveSharepointLink = () => {
-    if (!editDocModal.centreId || !editDocModal.categoryKey) return;
+  // Autocompletar el nombre del archivo al pegar la URL
+  const handleUrlChange = (url) => {
+    setNewLinkUrl(url);
+    if (url.trim() && !newLinkName) {
+      setNewLinkName(extractFileNameFromUrl(url));
+    }
+  };
+
+  // Añadir un enlace de SharePoint a la categoría actual
+  const handleAddLink = (e) => {
+    e.preventDefault();
+    if (!newLinkUrl.trim() || !editDocModal.centreId || !editDocModal.categoryKey) return;
+
+    const fileName = newLinkName.trim() || extractFileNameFromUrl(newLinkUrl);
+    const newDocObj = {
+      id: `doc_${Date.now()}`,
+      name: fileName,
+      link: newLinkUrl.trim()
+    };
 
     setCentres(prevCentres => prevCentres.map(c => {
       if (c.id === editDocModal.centreId) {
-        const isPresent = editDocModal.link.trim() !== '';
+        const currentList = Array.isArray(c.docs[editDocModal.categoryKey]) 
+          ? c.docs[editDocModal.categoryKey] 
+          : [];
         return {
           ...c,
           docs: {
             ...c.docs,
-            [editDocModal.categoryKey]: {
-              link: editDocModal.link,
-              status: isPresent ? 'presente' : 'pendiente'
-            }
+            [editDocModal.categoryKey]: [...currentList, newDocObj]
           }
         };
       }
       return c;
     }));
 
-    setEditDocModal({ open: false, centreId: null, categoryKey: null, link: '' });
+    setNewLinkUrl('');
+    setNewLinkName('');
+  };
+
+  // Eliminar un enlace individual de una categoría
+  const handleDeleteLink = (docId) => {
+    setCentres(prevCentres => prevCentres.map(c => {
+      if (c.id === editDocModal.centreId) {
+        const currentList = Array.isArray(c.docs[editDocModal.categoryKey]) 
+          ? c.docs[editDocModal.categoryKey] 
+          : [];
+        return {
+          ...c,
+          docs: {
+            ...c.docs,
+            [editDocModal.categoryKey]: currentList.filter(d => d.id !== docId)
+          }
+        };
+      }
+      return c;
+    }));
   };
 
   if (!currentUser) {
@@ -344,7 +415,7 @@ export default function App() {
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 py-8 flex-1 w-full">
-        {activeTab === 'centres' && !selectedCentre && (
+        {activeTab === 'centres' && !currentSelectedCentre && (
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
@@ -368,7 +439,12 @@ export default function App() {
               {accessibleCentres
                 .filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()))
                 .map((centre) => {
-                  const pendingCount = Object.values(centre.docs).filter(d => d.status === 'pendiente').length;
+                  const categoriesKeys = ['evaluacion_riesgos', 'informacion_riesgos', 'medidas_emergencia'];
+                  const pendingCount = categoriesKeys.filter(k => {
+                    const list = Array.isArray(centre.docs[k]) ? centre.docs[k] : [];
+                    return list.length === 0;
+                  }).length;
+
                   return (
                     <div 
                       key={centre.id}
@@ -382,11 +458,11 @@ export default function App() {
                           </span>
                           {pendingCount === 0 ? (
                             <span className="text-xs font-semibold px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-full flex items-center gap-1">
-                              <CheckCircle2 className="w-3 h-3" /> OK
+                              <CheckCircle2 className="w-3 h-3" /> Completo
                             </span>
                           ) : (
-                            <span className="text-xs font-semibold px-2.5 py-1 bg-rose-100 text-rose-700 rounded-full flex items-center gap-1">
-                              <AlertTriangle className="w-3 h-3" /> {pendingCount} Pendiente
+                            <span className="text-xs font-semibold px-2.5 py-1 bg-amber-100 text-amber-700 rounded-full flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3" /> {pendingCount} Categ. sin docs
                             </span>
                           )}
                         </div>
@@ -407,7 +483,7 @@ export default function App() {
           </div>
         )}
 
-        {activeTab === 'centres' && selectedCentre && (
+        {activeTab === 'centres' && currentSelectedCentre && (
           <div className="space-y-6">
             <button 
               onClick={() => setSelectedCentre(null)}
@@ -418,11 +494,11 @@ export default function App() {
 
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-2">
               <span className="text-xs font-semibold px-2.5 py-1 bg-slate-100 text-slate-600 rounded">
-                {selectedCentre.zone}
+                {currentSelectedCentre.zone}
               </span>
-              <h2 className="text-2xl font-bold text-slate-800">{selectedCentre.name}</h2>
+              <h2 className="text-2xl font-bold text-slate-800">{currentSelectedCentre.name}</h2>
               <p className="text-xs text-slate-400">
-                Usuarios con acceso: {selectedCentre.users.join(', ')}
+                Usuarios con acceso: {currentSelectedCentre.users.join(', ')}
               </p>
             </div>
 
@@ -432,8 +508,8 @@ export default function App() {
                 { key: 'informacion_riesgos', label: 'Información de Riesgos' },
                 { key: 'medidas_emergencia', label: 'Medidas de Emergencia' }
               ].map(({ key, label }) => {
-                const doc = selectedCentre.docs[key];
-                const isPresent = doc && doc.status === 'presente';
+                const docList = Array.isArray(currentSelectedCentre.docs[key]) ? currentSelectedCentre.docs[key] : [];
+                const isPresent = docList.length > 0;
 
                 return (
                   <div key={key} className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between space-y-4">
@@ -442,7 +518,7 @@ export default function App() {
                         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Categoría</span>
                         {isPresent ? (
                           <span className="text-xs font-bold px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-full flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3" /> Presente / OK
+                            <CheckCircle2 className="w-3 h-3" /> {docList.length} Archivo(s)
                           </span>
                         ) : (
                           <span className="text-xs font-bold px-2.5 py-1 bg-rose-100 text-rose-700 rounded-full flex items-center gap-1">
@@ -451,43 +527,50 @@ export default function App() {
                         )}
                       </div>
 
-                      <h3 className="text-base font-bold text-slate-800 mb-2">{label}</h3>
+                      <h3 className="text-base font-bold text-slate-800 mb-3">{label}</h3>
 
                       {isPresent ? (
-                        <p className="text-xs text-emerald-700 bg-emerald-50 p-3 rounded border border-emerald-100 font-medium">
-                          Documento enlazado a SharePoint correctamente.
-                        </p>
+                        <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                          {docList.map(doc => (
+                            <a 
+                              key={doc.id}
+                              href={doc.link} 
+                              target="_blank" 
+                              rel="noreferrer"
+                              className="p-2.5 bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 rounded-lg flex items-center justify-between text-xs transition group"
+                            >
+                              <div className="flex items-center space-x-2 truncate pr-2">
+                                <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+                                <span className="font-medium text-slate-700 group-hover:text-blue-700 truncate">{doc.name}</span>
+                              </div>
+                              <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 shrink-0" />
+                            </a>
+                          ))}
+                        </div>
                       ) : (
                         <p className="text-xs text-rose-500 italic bg-rose-50 p-3 rounded border border-rose-100">
-                          Aún no se ha vinculado ningún documento para esta categoría en SharePoint.
+                          Sin documentos vinculados en esta categoría.
                         </p>
                       )}
                     </div>
 
                     <div className="space-y-2 pt-2 border-t border-slate-100">
-                      {isPresent && (
-                        <a 
-                          href={doc.link} 
-                          target="_blank" 
-                          rel="noreferrer"
-                          className="w-full py-2 px-3 bg-blue-50 text-blue-600 font-medium text-xs rounded-lg hover:bg-blue-100 transition flex items-center justify-center gap-2"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          Abrir en SharePoint
-                        </a>
-                      )}
-
                       {currentUser.role === 'superadmin' && (
                         <button 
-                          onClick={() => setEditDocModal({
-                            open: true,
-                            centreId: selectedCentre.id,
-                            categoryKey: key,
-                            link: doc?.link || ''
-                          })}
-                          className="w-full py-2 px-3 bg-slate-100 text-slate-700 font-medium text-xs rounded-lg hover:bg-slate-200 transition"
+                          onClick={() => {
+                            setEditDocModal({
+                              open: true,
+                              centreId: currentSelectedCentre.id,
+                              categoryKey: key,
+                              categoryLabel: label
+                            });
+                            setNewLinkUrl('');
+                            setNewLinkName('');
+                          }}
+                          className="w-full py-2 px-3 bg-slate-100 text-slate-700 font-medium text-xs rounded-lg hover:bg-slate-200 transition flex items-center justify-center gap-1.5"
                         >
-                          {isPresent ? 'Editar Enlace SharePoint' : '+ Enlazar Documento SharePoint'}
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Gestionar / Añadir Enlaces</span>
                         </button>
                       )}
                     </div>
@@ -613,37 +696,110 @@ export default function App() {
         )}
       </main>
 
+      {/* Modal para Múltiples Enlaces de SharePoint por Categoría */}
       {editDocModal.open && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
-            <h3 className="text-lg font-bold text-slate-800">Añadir / Editar Enlace de SharePoint</h3>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">URL / Enlace de SharePoint</label>
-              <input 
-                type="url" 
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="https://empresa.sharepoint.com/..."
-                value={editDocModal.link}
-                onChange={(e) => setEditDocModal({ ...editDocModal, link: e.target.value })}
-              />
-              <p className="text-xs text-slate-400 mt-2">
-                Si dejas el enlace en blanco, el documento volverá a marcarse como <span className="font-bold text-slate-600">PENDIENTE</span>.
-              </p>
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 space-y-6 max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center border-b pb-3">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">Gestionar Enlaces SharePoint</h3>
+                <p className="text-xs text-slate-500">{editDocModal.categoryLabel}</p>
+              </div>
+              <button 
+                onClick={() => setEditDocModal({ open: false, centreId: null, categoryKey: null, categoryLabel: '' })}
+                className="text-slate-400 hover:text-slate-600 text-xl font-bold"
+              >
+                &times;
+              </button>
             </div>
 
-            <div className="flex justify-end space-x-3 pt-4 border-t">
+            {/* Formulario para agregar un nuevo enlace */}
+            <form onSubmit={handleAddLink} className="space-y-3 bg-slate-50 p-4 rounded-lg border border-slate-200">
+              <span className="text-xs font-bold text-slate-700 uppercase block">Añadir nuevo enlace</span>
+              
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">URL / Enlace de SharePoint</label>
+                <div className="relative">
+                  <LinkIcon className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                  <input 
+                    type="url" 
+                    required
+                    className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="https://empresa.sharepoint.com/..."
+                    value={newLinkUrl}
+                    onChange={(e) => handleUrlChange(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">Nombre del Archivo (Autodetectado o personalizado)</label>
+                <input 
+                  type="text" 
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Ej. Evaluacion_Mestalla_2026.pdf"
+                  value={newLinkName}
+                  onChange={(e) => setNewLinkName(e.target.value)}
+                />
+              </div>
+
               <button 
-                onClick={() => setEditDocModal({ open: false, centreId: null, categoryKey: null, link: '' })}
-                className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition"
+                type="submit"
+                className="w-full py-2 bg-blue-600 text-white font-medium text-xs rounded-lg hover:bg-blue-700 transition shadow flex items-center justify-center gap-1"
               >
-                Cancelar
-              </button>
-              <button 
-                onClick={saveSharepointLink}
-                className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition shadow"
-              >
+                <Plus className="w-4 h-4" />
                 Guardar Enlace
+              </button>
+            </form>
+
+            {/* Lista de enlaces existentes */}
+            <div className="flex-1 overflow-y-auto space-y-2">
+              <span className="text-xs font-bold text-slate-700 uppercase block">Enlaces Guardados</span>
+              
+              {(() => {
+                const centre = centres.find(c => c.id === editDocModal.centreId);
+                const docList = centre && Array.isArray(centre.docs[editDocModal.categoryKey]) 
+                  ? centre.docs[editDocModal.categoryKey] 
+                  : [];
+
+                if (docList.length === 0) {
+                  return (
+                    <p className="text-xs text-slate-400 text-center py-4 italic border border-dashed rounded-lg">
+                      No hay enlaces guardados en esta categoría.
+                    </p>
+                  );
+                }
+
+                return docList.map(doc => (
+                  <div key={doc.id} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg text-xs shadow-sm">
+                    <div className="flex items-center space-x-2 truncate pr-2">
+                      <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+                      <div className="truncate">
+                        <p className="font-semibold text-slate-800 truncate">{doc.name}</p>
+                        <a href={doc.link} target="_blank" rel="noreferrer" className="text-slate-400 hover:text-blue-600 truncate block text-[10px]">
+                          {doc.link}
+                        </a>
+                      </div>
+                    </div>
+
+                    <button 
+                      onClick={() => handleDeleteLink(doc.id)}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition shrink-0"
+                      title="Eliminar enlace"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ));
+              })()}
+            </div>
+
+            <div className="flex justify-end pt-3 border-t">
+              <button 
+                onClick={() => setEditDocModal({ open: false, centreId: null, categoryKey: null, categoryLabel: '' })}
+                className="px-4 py-2 text-xs font-medium bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition"
+              >
+                Cerrar
               </button>
             </div>
           </div>
