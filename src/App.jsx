@@ -18,15 +18,16 @@ import {
   Lock,
   ChevronRight,
   ShieldCheck,
-  FileSpreadsheet
+  FileSpreadsheet,
+  KeyRound
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
-// Datos iniciales de ejemplo
+// Usuarios de prueba iniciales
 const INITIAL_USERS = [
-  { id: '1', email: 'julio.benages@neural.es', dni: '25409471z', name: 'Julio Benages', role: 'superadmin', assignedCentres: ['ALL'] },
-  { id: '2', email: 'tecnico.madrid@neural.es', dni: '12345678a', name: 'Técnico Madrid', role: 'gestor', assignedCentres: ['c1'] },
-  { id: '3', email: 'tecnico.valencia@neural.es', dni: '87654321b', name: 'Técnico Valencia', role: 'gestor', assignedCentres: ['c2'] },
+  { id: '1', email: 'julio.benages@neural.es', code: 'N3UR4L2026X', name: 'Julio Benages', role: 'superadmin', assignedCentres: ['ALL'] },
+  { id: '2', email: 'tecnico.madrid@neural.es', code: 'M4DR1D2026', name: 'Técnico Madrid', role: 'gestor', assignedCentres: ['c1'] },
+  { id: '3', email: 'tecnico.valencia@neural.es', code: 'V4L3NC1426', name: 'Técnico Valencia', role: 'gestor', assignedCentres: ['c2'] },
 ];
 
 const INITIAL_GENERAL_DOCS = [
@@ -64,20 +65,20 @@ export default function App() {
   // Autenticación
   const [currentUser, setCurrentUser] = useState(null);
   const [loginEmail, setLoginEmail] = useState('');
-  const [loginDni, setLoginDni] = useState('');
+  const [loginCode, setLoginCode] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  // Estado global de datos
+  // Estado global
   const [users, setUsers] = useState(INITIAL_USERS);
   const [centres, setCentres] = useState(INITIAL_CENTRES);
   const [generalDocs, setGeneralDocs] = useState(INITIAL_GENERAL_DOCS);
 
   // Navegación
-  const [activeTab, setActiveTab] = useState('centres'); // 'centres', 'general', 'excel', 'users'
+  const [activeTab, setActiveTab] = useState('centres');
   const [selectedCentre, setSelectedCentre] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Modal para agregar/editar enlace de SharePoint
+  // Modal enlace SharePoint
   const [editDocModal, setEditDocModal] = useState({ open: false, centreId: null, categoryKey: null, title: '', link: '' });
 
   // Manejo de Login
@@ -86,30 +87,29 @@ export default function App() {
     setLoginError('');
     const user = users.find(
       u => u.email.toLowerCase().trim() === loginEmail.toLowerCase().trim() && 
-           u.dni.toLowerCase().trim() === loginDni.toLowerCase().trim()
+           u.code.trim() === loginCode.trim()
     );
 
     if (user) {
       setCurrentUser(user);
     } else {
-      setLoginError('Usuario o contraseña (DNI) incorrectos.');
+      setLoginError('Correo o código alfanumérico incorrectos.');
     }
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
     setLoginEmail('');
-    setLoginDni('');
+    setLoginCode('');
   };
 
-  // Filtrado de centros según rol
   const accessibleCentres = useMemo(() => {
     if (!currentUser) return [];
     if (currentUser.role === 'superadmin') return centres;
     return centres.filter(c => c.users.includes(currentUser.email));
   }, [currentUser, centres]);
 
-  // Carga Masiva desde Excel (Centros)
+  // Carga Masiva Excel
   const handleFileUploadCentres = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -122,29 +122,53 @@ export default function App() {
       const ws = wb.Sheets[wsname];
       const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
-      // Omitir cabecera si existe
       const rows = data.slice(1);
       const newCentres = [...centres];
+      const newUsers = [...users];
 
       rows.forEach((row, idx) => {
-        if (!row[0]) return; // Columna A vacía
+        if (!row[0]) return;
 
-        const centreName = row[0];
-        const zone = row[1] || 'General';
-        const assignedUsers = [];
+        const centreName = row[0].toString().trim();
+        const zone = row[1] ? row[1].toString().trim() : 'General';
+        const assignedUserEmails = [];
 
-        // Leer columnas C, E, G, I, K (índices 2, 4, 6, 8, 10)
-        [2, 4, 6, 8, 10].forEach(colIdx => {
-          if (row[colIdx]) assignedUsers.push(row[colIdx].toString().trim());
+        // Leer pares (C, D), (E, F), (G, H), (I, J), (K, L)
+        const userCols = [
+          { emailIdx: 2, codeIdx: 3 },
+          { emailIdx: 4, codeIdx: 5 },
+          { emailIdx: 6, codeIdx: 7 },
+          { emailIdx: 8, codeIdx: 9 },
+          { emailIdx: 10, codeIdx: 11 }
+        ];
+
+        userCols.forEach(({ emailIdx, codeIdx }) => {
+          if (row[emailIdx] && row[codeIdx]) {
+            const email = row[emailIdx].toString().trim();
+            const code = row[codeIdx].toString().trim();
+            assignedUserEmails.push(email);
+
+            // Crear usuario si no existe
+            const exists = newUsers.some(u => u.email.toLowerCase() === email.toLowerCase());
+            if (!exists) {
+              newUsers.push({
+                id: `u_${Date.now()}_${Math.random()}`,
+                email: email,
+                code: code,
+                name: email.split('@')[0],
+                role: 'gestor',
+                assignedCentres: []
+              });
+            }
+          }
         });
 
-        // Crear o actualizar centro
         const existingIndex = newCentres.findIndex(c => c.name.toLowerCase() === centreName.toLowerCase());
         const centreObj = {
           id: existingIndex >= 0 ? newCentres[existingIndex].id : `c_${Date.now()}_${idx}`,
           name: centreName,
           zone: zone,
-          users: assignedUsers,
+          users: assignedUserEmails,
           docs: existingIndex >= 0 ? newCentres[existingIndex].docs : {
             evaluacion_riesgos: { title: '', link: '', status: 'pendiente' },
             informacion_riesgos: { title: '', link: '', status: 'pendiente' },
@@ -160,12 +184,12 @@ export default function App() {
       });
 
       setCentres(newCentres);
-      alert('¡Importación masiva de centros completada con éxito!');
+      setUsers(newUsers);
+      alert('¡Centros y usuarios importados correctamente!');
     };
     reader.readAsBinaryString(file);
   };
 
-  // Guardar Enlace SharePoint
   const saveSharepointLink = () => {
     if (!editDocModal.centreId || !editDocModal.categoryKey) return;
 
@@ -190,10 +214,9 @@ export default function App() {
     setEditDocModal({ open: false, centreId: null, categoryKey: null, title: '', link: '' });
   };
 
-  // Render Login
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 font-sans">
         <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full space-y-6">
           <div className="text-center space-y-2">
             <div className="bg-blue-600 text-white w-12 h-12 rounded-lg flex items-center justify-center mx-auto shadow-lg">
@@ -217,14 +240,14 @@ export default function App() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Contraseña (DNI)</label>
+              <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Código Alfanumérico (Contraseña)</label>
               <input 
                 type="password" 
                 required
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                placeholder="12345678X"
-                value={loginDni}
-                onChange={(e) => setLoginDni(e.target.value)}
+                placeholder="Tu código de acceso"
+                value={loginCode}
+                onChange={(e) => setLoginCode(e.target.value)}
               />
             </div>
 
@@ -253,7 +276,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
-      {/* Topbar */}
       <header className="bg-slate-800 text-white shadow-md">
         <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
           <div className="flex items-center space-x-3">
@@ -282,7 +304,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Navegación de Pestañas */}
       <nav className="bg-white border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 flex space-x-8">
           <button 
@@ -323,16 +344,13 @@ export default function App() {
         </div>
       </nav>
 
-      {/* Contenido Principal */}
       <main className="max-w-7xl mx-auto px-4 py-8 flex-1 w-full">
-
-        {/* PESTAÑA: MIS CENTROS */}
         {activeTab === 'centres' && !selectedCentre && (
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
                 <h2 className="text-xl font-bold text-slate-800">Centros Asignados</h2>
-                <p className="text-sm text-slate-500">Selecciona un centro para auditar o consultar sus 3 documentos obligatorios.</p>
+                <p className="text-sm text-slate-500">Selecciona un centro para revisar o enlazar la documentación.</p>
               </div>
 
               <div className="relative w-full sm:w-64">
@@ -374,7 +392,7 @@ export default function App() {
                           )}
                         </div>
 
-                        <h3 className="text-lg font-bold text-slate-800 group-hover:text-blue-600">
+                        <h3 className="text-lg font-bold text-slate-800">
                           {centre.name}
                         </h3>
                       </div>
@@ -390,7 +408,6 @@ export default function App() {
           </div>
         )}
 
-        {/* DETALLE DEL CENTRO */}
         {activeTab === 'centres' && selectedCentre && (
           <div className="space-y-6">
             <button 
@@ -410,7 +427,6 @@ export default function App() {
               </p>
             </div>
 
-            {/* Las 3 categorías obligatorias */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {[
                 { key: 'evaluacion_riesgos', label: 'Evaluación de Riesgos' },
@@ -484,12 +500,11 @@ export default function App() {
           </div>
         )}
 
-        {/* PESTAÑA: DOCUMENTACIÓN GENERAL */}
         {activeTab === 'general' && (
           <div className="space-y-6">
             <div>
               <h2 className="text-xl font-bold text-slate-800">Documentación General de PRL</h2>
-              <p className="text-sm text-slate-500">Procedimientos, normas, protocolos y plantillas comunes a disposición de todos los centros.</p>
+              <p className="text-sm text-slate-500">Procedimientos, normas, protocolos y plantillas comunes a todos los centros.</p>
             </div>
 
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -498,7 +513,7 @@ export default function App() {
                   <tr>
                     <th className="px-6 py-3">Documento</th>
                     <th className="px-6 py-3">Categoría</th>
-                    <th className="px-6 py-3">Fecha de Publicación</th>
+                    <th className="px-6 py-3">Fecha</th>
                     <th className="px-6 py-3 text-right">Acceso</th>
                   </tr>
                 </thead>
@@ -530,21 +545,20 @@ export default function App() {
           </div>
         )}
 
-        {/* PESTAÑA: CARGA MASIVA EXCEL (Solo Superadmin) */}
         {activeTab === 'excel' && currentUser.role === 'superadmin' && (
           <div className="max-w-2xl mx-auto bg-white p-8 rounded-xl border border-slate-200 shadow-sm space-y-6">
             <div>
               <h2 className="text-xl font-bold text-slate-800">Carga Masiva de Centros y Usuarios</h2>
-              <p className="text-sm text-slate-500">Sube una hoja de cálculo en formato .xlsx con las asignaciones correspondientes.</p>
+              <p className="text-sm text-slate-500">Sube tu hoja de cálculo (.xlsx) para actualizar los centros y accesos.</p>
             </div>
 
             <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-2 text-xs text-slate-600">
-              <p className="font-bold text-slate-800">Estructura esperada del Excel:</p>
+              <p className="font-bold text-slate-800">Estructura del Excel:</p>
               <ul className="list-disc pl-4 space-y-1">
                 <li><strong>Columna A:</strong> Nombre del Centro</li>
                 <li><strong>Columna B:</strong> Zona</li>
-                <li><strong>Columnas C, E, G, I, K:</strong> Correo de los usuarios autorizados</li>
-                <li><strong>Columnas D, F, H, J, L:</strong> DNI de los usuarios autorizados</li>
+                <li><strong>Columnas C, E, G, I, K:</strong> Correo del usuario</li>
+                <li><strong>Columnas D, F, H, J, L:</strong> Código Alfanumérico del usuario (Contraseña)</li>
               </ul>
             </div>
 
@@ -558,30 +572,26 @@ export default function App() {
               />
               <label htmlFor="excel-upload" className="cursor-pointer space-y-2 block">
                 <FileSpreadsheet className="w-10 h-10 text-emerald-600 mx-auto" />
-                <span className="block text-sm font-medium text-slate-700">Haz clic para seleccionar tu archivo Excel</span>
-                <span className="block text-xs text-slate-400">Formatos soportados: .xlsx, .xls</span>
+                <span className="block text-sm font-medium text-slate-700">Seleccionar archivo Excel</span>
               </label>
             </div>
           </div>
         )}
 
-        {/* PESTAÑA: GESTIÓN DE PERFILES (Solo Superadmin) */}
         {activeTab === 'users' && currentUser.role === 'superadmin' && (
           <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-xl font-bold text-slate-800">Usuarios Registrados</h2>
-                <p className="text-sm text-slate-500">Gestión de roles y accesos a la plataforma.</p>
-              </div>
+            <div>
+              <h2 className="text-xl font-bold text-slate-800">Usuarios Registrados</h2>
+              <p className="text-sm text-slate-500">Listado de usuarios y contraseñas (código alfanumérico).</p>
             </div>
 
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <table className="w-full text-left text-sm text-slate-600">
                 <thead className="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b">
                   <tr>
-                    <th className="px-6 py-3">Nombre</th>
+                    <th className="px-6 py-3">Nombre / ID</th>
                     <th className="px-6 py-3">Correo</th>
-                    <th className="px-6 py-3">DNI (Contraseña)</th>
+                    <th className="px-6 py-3">Código Alfanumérico</th>
                     <th className="px-6 py-3">Rol</th>
                   </tr>
                 </thead>
@@ -590,7 +600,7 @@ export default function App() {
                     <tr key={u.id} className="hover:bg-slate-50">
                       <td className="px-6 py-4 font-medium text-slate-800">{u.name}</td>
                       <td className="px-6 py-4">{u.email}</td>
-                      <td className="px-6 py-4 font-mono text-xs text-slate-400">{u.dni}</td>
+                      <td className="px-6 py-4 font-mono text-xs text-slate-600">{u.code}</td>
                       <td className="px-6 py-4">
                         <span className={`px-2 py-1 text-xs font-semibold rounded ${u.role === 'superadmin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
                           {u.role}
@@ -603,10 +613,8 @@ export default function App() {
             </div>
           </div>
         )}
-
       </main>
 
-      {/* MODAL: EDITAR ENLACE SHAREPOINT */}
       {editDocModal.open && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
@@ -632,7 +640,6 @@ export default function App() {
                 value={editDocModal.link}
                 onChange={(e) => setEditDocModal({ ...editDocModal, link: e.target.value })}
               />
-              <p className="text-xs text-slate-400 mt-1">Si dejas el enlace en blanco, el documento volverá a marcarse como <strong>PENDIENTE</strong>.</p>
             </div>
 
             <div className="flex justify-end space-x-3 pt-4 border-t">
