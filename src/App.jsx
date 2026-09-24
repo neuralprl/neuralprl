@@ -43,9 +43,9 @@ const INITIAL_CENTRES = [
     zone: 'Madrid Norte',
     users: ['julio.benages@neural.es', 'tecnico.madrid@neural.es'],
     docs: {
-      evaluacion_riesgos: { title: 'Evaluación de Riesgos Laborales 2026', link: 'https://sharepoint.com/eval-madrid', status: 'presente' },
-      informacion_riesgos: { title: 'Ficha Informativa Puestos de Trabajo', link: 'https://sharepoint.com/info-madrid', status: 'presente' },
-      medidas_emergencia: { title: '', link: '', status: 'pendiente' }
+      evaluacion_riesgos: { link: 'https://sharepoint.com/eval-madrid', status: 'presente' },
+      informacion_riesgos: { link: 'https://sharepoint.com/info-madrid', status: 'presente' },
+      medidas_emergencia: { link: '', status: 'pendiente' }
     }
   },
   {
@@ -54,9 +54,9 @@ const INITIAL_CENTRES = [
     zone: 'Comunidad Valenciana',
     users: ['julio.benages@neural.es', 'tecnico.valencia@neural.es'],
     docs: {
-      evaluacion_riesgos: { title: 'Evaluación de Riesgos 2025/2026', link: 'https://sharepoint.com/eval-valencia', status: 'presente' },
-      informacion_riesgos: { title: '', link: '', status: 'pendiente' },
-      medidas_emergencia: { title: 'Plan de Emergencia y Evacuación', link: 'https://sharepoint.com/emerg-valencia', status: 'presente' }
+      evaluacion_riesgos: { link: 'https://sharepoint.com/eval-valencia', status: 'presente' },
+      informacion_riesgos: { link: '', status: 'pendiente' },
+      medidas_emergencia: { link: 'https://sharepoint.com/emerg-valencia', status: 'presente' }
     }
   }
 ];
@@ -79,7 +79,7 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
 
   // Modal enlace SharePoint
-  const [editDocModal, setEditDocModal] = useState({ open: false, centreId: null, categoryKey: null, title: '', link: '' });
+  const [editDocModal, setEditDocModal] = useState({ open: false, centreId: null, categoryKey: null, link: '' });
 
   // Manejo de Login
   const handleLogin = (e) => {
@@ -170,9 +170,9 @@ export default function App() {
           zone: zone,
           users: assignedUserEmails,
           docs: existingIndex >= 0 ? newCentres[existingIndex].docs : {
-            evaluacion_riesgos: { title: '', link: '', status: 'pendiente' },
-            informacion_riesgos: { title: '', link: '', status: 'pendiente' },
-            medidas_emergencia: { title: '', link: '', status: 'pendiente' }
+            evaluacion_riesgos: { link: '', status: 'pendiente' },
+            informacion_riesgos: { link: '', status: 'pendiente' },
+            medidas_emergencia: { link: '', status: 'pendiente' }
           }
         };
 
@@ -201,7 +201,6 @@ export default function App() {
           docs: {
             ...c.docs,
             [editDocModal.categoryKey]: {
-              title: editDocModal.title || (isPresent ? 'Documento Vinculado' : ''),
               link: editDocModal.link,
               status: isPresent ? 'presente' : 'pendiente'
             }
@@ -211,7 +210,7 @@ export default function App() {
       return c;
     }));
 
-    setEditDocModal({ open: false, centreId: null, categoryKey: null, title: '', link: '' });
+    setEditDocModal({ open: false, centreId: null, categoryKey: null, link: '' });
   };
 
   if (!currentUser) {
@@ -455,8 +454,8 @@ export default function App() {
                       <h3 className="text-base font-bold text-slate-800 mb-2">{label}</h3>
 
                       {isPresent ? (
-                        <p className="text-sm text-slate-600 bg-slate-50 p-3 rounded border border-slate-100">
-                          {doc.title || 'Documento disponible en SharePoint'}
+                        <p className="text-xs text-emerald-700 bg-emerald-50 p-3 rounded border border-emerald-100 font-medium">
+                          Documento enlazado a SharePoint correctamente.
                         </p>
                       ) : (
                         <p className="text-xs text-rose-500 italic bg-rose-50 p-3 rounded border border-rose-100">
@@ -484,7 +483,6 @@ export default function App() {
                             open: true,
                             centreId: selectedCentre.id,
                             categoryKey: key,
-                            title: doc?.title || '',
                             link: doc?.link || ''
                           })}
                           className="w-full py-2 px-3 bg-slate-100 text-slate-700 font-medium text-xs rounded-lg hover:bg-slate-200 transition"
@@ -621,17 +619,6 @@ export default function App() {
             <h3 className="text-lg font-bold text-slate-800">Añadir / Editar Enlace de SharePoint</h3>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Nombre o Título del Documento</label>
-              <input 
-                type="text" 
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Ej. Evaluación de Riesgos Laborales 2026"
-                value={editDocModal.title}
-                onChange={(e) => setEditDocModal({ ...editDocModal, title: e.target.value })}
-              />
-            </div>
-
-            <div>
               <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">URL / Enlace de SharePoint</label>
               <input 
                 type="url" 
@@ -640,11 +627,14 @@ export default function App() {
                 value={editDocModal.link}
                 onChange={(e) => setEditDocModal({ ...editDocModal, link: e.target.value })}
               />
+              <p className="text-xs text-slate-400 mt-2">
+                Si dejas el enlace en blanco, el documento volverá a marcarse como <span className="font-bold text-slate-600">PENDIENTE</span>.
+              </p>
             </div>
 
             <div className="flex justify-end space-x-3 pt-4 border-t">
               <button 
-                onClick={() => setEditDocModal({ open: false, centreId: null, categoryKey: null, title: '', link: '' })}
+                onClick={() => setEditDocModal({ open: false, centreId: null, categoryKey: null, link: '' })}
                 className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition"
               >
                 Cancelar
