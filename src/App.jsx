@@ -23,14 +23,14 @@ import {
   Send,
   Eye,
   CheckSquare,
-  Square
+  Square,
+  UserPlus,
+  Filter
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 // --- DATOS INICIALES ---
 
-// Usuarios
-// Roles: 'superadmin' (SA), 'corporativo' (UC), 'externo' (UX)
 const INITIAL_USERS = [
   { id: '1', email: 'neuralprl', code: 'Neuralprl@', name: 'Superadministrador', role: 'superadmin', assignedCentres: ['ALL'], company: 'Neural PRL' },
   { id: '2', email: 'director.madrid@neural.es', code: 'Pass1234@', name: 'Carlos (Director Madrid)', role: 'corporativo', assignedCentres: ['c1'], company: 'Neural SRL' },
@@ -68,8 +68,7 @@ const INITIAL_CENTRES = [
   }
 ];
 
-// Registros de Coordinación CAE
-// status: 'pendiente_lectura' | 'documentos_enviados' | 'completado'
+// Registros de Coordinación CAE con Trabajadores Autorizados integrados
 const INITIAL_CAE_RECORDS = [
   {
     id: 'cae_1',
@@ -78,12 +77,15 @@ const INITIAL_CAE_RECORDS = [
     userEmail: 'prevencion@contratasvalencia.com',
     docsRead: false,
     docsSent: false,
-    status: 'pendiente_lectura',
-    updatedAt: '2026-02-20'
+    status: 'pendiente', // 'pendiente' | 'documentos_enviados' | 'completado'
+    updatedAt: '2026-02-20',
+    workers: [
+      { id: 'w1', name: 'Juan Pérez Gómez', dni: '12345678A', approved: false },
+      { id: 'w2', name: 'María López Sanchis', dni: '87654321B', approved: false }
+    ]
   }
 ];
 
-// Notificaciones del correo simulado para el SA
 const INITIAL_NOTIFICATIONS = [];
 
 const extractFileNameFromUrl = (url) => {
@@ -115,10 +117,16 @@ export default function App() {
   const [caeRecords, setCaeRecords] = useState(INITIAL_CAE_RECORDS);
   const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
 
-  // Navegación
+  // Navegación y Filtros
   const [activeTab, setActiveTab] = useState('centres');
   const [selectedCentre, setSelectedCentre] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterCompany, setFilterCompany] = useState('TODAS');
+
+  // Estado para añadir trabajadores
+  const [addingWorkerForRecord, setAddingWorkerForRecord] = useState(null);
+  const [newWorkerName, setNewWorkerName] = useState('');
+  const [newWorkerDni, setNewWorkerDni] = useState('');
 
   // Modal para SharePoint
   const [editDocModal, setEditDocModal] = useState({ open: false, centreId: null, categoryKey: null, categoryLabel: '' });
@@ -152,7 +160,7 @@ export default function App() {
     setLoginCode('');
   };
 
-  // Filtrar centros accesibles según el rol
+  // Centros accesibles
   const accessibleCentres = useMemo(() => {
     if (!currentUser) return [];
     if (currentUser.role === 'superadmin') return centres;
@@ -164,7 +172,118 @@ export default function App() {
     return centres.find(c => c.id === selectedCentre.id) || selectedCentre;
   }, [centres, selectedCentre]);
 
-  // Carga Masiva Excel
+  // Lista única de empresas para el filtro
+  const companyList = useMemo(() => {
+    const list = caeRecords.map(r => r.companyName);
+    return ['TODAS', ...Array.from(newSet(list))];
+  }, [caeRecords]);
+
+  // Registros CAE filtrados por empresa
+  const filteredCaeRecords = useMemo(() => {
+    if (filterCompany === 'TODAS') return caeRecords;
+    return caeRecords.filter(r => r.companyName === filterCompany);
+  }, [caeRecords, filterCompany]);
+
+  // --- ACCIONES EN TRABAJADORES Y CAE ---
+
+  // Añadir trabajador a la empresa
+  const handleAddWorker = (recordId) => {
+    if (!newWorkerName.trim() || !newWorkerDni.trim()) return;
+
+    setCaeRecords(prev => prev.map(r => {
+      if (r.id === recordId) {
+        const newWorker = {
+          id: `w_${Date.now()}`,
+          name: newWorkerName.trim(),
+          dni: newWorkerDni.trim(),
+          approved: false
+        };
+        return { ...r, workers: [...(r.workers || []), newWorker] };
+      }
+      return r;
+    }));
+
+    setNewWorkerName('');
+    setNewWorkerDni('');
+    setAddingWorkerForRecord(null);
+  };
+
+  // Eliminar trabajador
+  const handleDeleteWorker = (recordId, workerId) => {
+    setCaeRecords(prev => prev.map(r => {
+      if (r.id === recordId) {
+        return { ...r, workers: (r.workers || []).filter(w => w.id !== workerId) };
+      }
+      return r;
+    }));
+  };
+
+  // Cambiar estado OK individual de un trabajador
+  const handleToggleWorkerApproval = (recordId, workerId) => {
+    setCaeRecords(prev => prev.map(r => {
+      if (r.id === recordId) {
+        const updatedWorkers = (r.workers || []).map(w => 
+          w.id === workerId ? { ...w, approved: !w.approved } : w
+        );
+        return { ...r, workers: updatedWorkers };
+      }
+      return r;
+    }));
+  };
+
+  // Controles manuales del SA para Lectura PRL y Envío Doc.
+  const handleToggleSaDocRead = (recordId) => {
+    setCaeRecords(prev => prev.map(r => {
+      if (r.id === recordId) {
+        const newRead = !r.docsRead;
+        return { 
+          ...r, 
+          docsRead: newRead,
+          status: r.status === 'completado' ? 'completado' : (newRead && r.docsSent ? 'documentos_enviados' : 'pendiente')
+        };
+      }
+      return r;
+    }));
+  };
+
+  const handleToggleSaDocSent = (recordId) => {
+    setCaeRecords(prev => prev.map(r => {
+      if (r.id === recordId) {
+        const newSent = !r.docsSent;
+        return { 
+          ...r, 
+          docsSent: newSent,
+          status: r.status === 'completado' ? 'completado' : (newSent ? 'documentos_enviados' : 'pendiente')
+        };
+      }
+      return r;
+    }));
+  };
+
+  // Alternar aprobación global (Boton Rojo / Verde)
+  const handleToggleApproveCae = (recordId) => {
+    setCaeRecords(prev => prev.map(r => {
+      if (r.id === recordId) {
+        const isApproved = r.status === 'completado';
+        if (isApproved) {
+          // Volver a rojo / pendiente
+          return { ...r, status: r.docsSent ? 'documentos_enviados' : 'pendiente' };
+        } else {
+          // Aprobar y pasar a verde
+          return { 
+            ...r, 
+            docsRead: true,
+            docsSent: true,
+            status: 'completado',
+            workers: (r.workers || []).map(w => ({ ...w, approved: true }))
+          };
+        }
+      }
+      return r;
+    }));
+  };
+
+  // Excel Upload
   const handleFileUploadCentres = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -243,123 +362,7 @@ export default function App() {
     reader.readAsBinaryString(file);
   };
 
-  // --- LÓGICA MÓDULO CAE ---
-
-  // Marcar lectura de documentos (UX)
-  const handleToggleReadDocs = (centreId) => {
-    setCaeRecords(prev => {
-      const existing = prev.find(r => r.centreId === centreId && r.userEmail === currentUser.email);
-      if (existing) {
-        return prev.map(r => r.id === existing.id ? { ...r, docsRead: !r.docsRead } : r);
-      } else {
-        return [...prev, {
-          id: `cae_${Date.now()}`,
-          centreId,
-          companyName: currentUser.company || currentUser.name,
-          userEmail: currentUser.email,
-          docsRead: true,
-          docsSent: false,
-          status: 'pendiente_lectura',
-          updatedAt: new Date().toISOString().split('T')[0]
-        }];
-      }
-    });
-  };
-
-  // Enviar documentación de coordinación (UX) -> Genera email/notificación al SA
-  const handleSendCaeDocs = (centreId) => {
-    const centre = centres.find(c => c.id === centreId);
-    
-    setCaeRecords(prev => {
-      const existing = prev.find(r => r.centreId === centreId && r.userEmail === currentUser.email);
-      if (existing) {
-        return prev.map(r => r.id === existing.id ? { 
-          ...r, 
-          docsSent: true, 
-          status: 'documentos_enviados',
-          updatedAt: new Date().toISOString().split('T')[0]
-        } : r);
-      } else {
-        return [...prev, {
-          id: `cae_${Date.now()}`,
-          centreId,
-          companyName: currentUser.company || currentUser.name,
-          userEmail: currentUser.email,
-          docsRead: true,
-          docsSent: true,
-          status: 'documentos_enviados',
-          updatedAt: new Date().toISOString().split('T')[0]
-        }];
-      }
-    });
-
-    const newNotif = {
-      id: `notif_${Date.now()}`,
-      title: 'Nueva Documentación CAE Enviada',
-      message: `La empresa ${currentUser.company || currentUser.name} (${currentUser.email}) ha enviado la documentación CAE para el centro ${centre?.name || ''}.`,
-      date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      read: false
-    };
-    setNotifications(prev => [newNotif, ...prev]);
-
-    alert('Documentación de coordinación enviada con éxito. Se ha notificado al Superadministrador para su validación.');
-  };
-
-  // Cambios manuales directos por parte del Superadministrador (SA)
-  const handleToggleSaDocRead = (recordId) => {
-    setCaeRecords(prev => prev.map(r => {
-      if (r.id === recordId) {
-        const newRead = !r.docsRead;
-        return { 
-          ...r, 
-          docsRead: newRead,
-          status: r.status === 'completado' ? 'completado' : (newRead && r.docsSent ? 'documentos_enviados' : 'pendiente_lectura')
-        };
-      }
-      return r;
-    }));
-  };
-
-  const handleToggleSaDocSent = (recordId) => {
-    setCaeRecords(prev => prev.map(r => {
-      if (r.id === recordId) {
-        const newSent = !r.docsSent;
-        return { 
-          ...r, 
-          docsSent: newSent,
-          status: r.status === 'completado' ? 'completado' : (newSent ? 'documentos_enviados' : 'pendiente_lectura')
-        };
-      }
-      return r;
-    }));
-  };
-
-  // Validar y Aprobar Acceso Directo (Superadministrador SA)
-  const handleApproveCae = (recordId) => {
-    setCaeRecords(prev => prev.map(r => {
-      if (r.id === recordId) {
-        return { 
-          ...r, 
-          docsRead: true,
-          docsSent: true,
-          status: 'completado' 
-        };
-      }
-      return r;
-    }));
-  };
-
-  // Alternar o revocar la aprobación del SA
-  const handleRevokeCae = (recordId) => {
-    setCaeRecords(prev => prev.map(r => {
-      if (r.id === recordId) {
-        return { ...r, status: r.docsSent ? 'documentos_enviados' : 'pendiente_lectura' };
-      }
-      return r;
-    }));
-  };
-
-  // Modal Enlaces SharePoint
+  // Enlaces SharePoint
   const handleUrlChange = (url) => {
     setNewLinkUrl(url);
     if (url.trim() && !newLinkName) {
@@ -416,7 +419,7 @@ export default function App() {
     }));
   };
 
-  // Pantalla de Login
+  // Login View
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 font-sans">
@@ -479,7 +482,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
-      {/* Header Superior */}
+      {/* Header */}
       <header className="bg-slate-800 text-white shadow-md sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
           <div className="flex items-center space-x-3">
@@ -491,7 +494,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center space-x-4">
-            {/* Notificaciones Correo para el Superadministrador */}
             {currentUser.role === 'superadmin' && (
               <div className="relative group">
                 <button className="p-2 text-slate-300 hover:text-white rounded-lg relative">
@@ -502,27 +504,6 @@ export default function App() {
                     </span>
                   )}
                 </button>
-
-                {/* Dropdown Notificaciones / Mail SA */}
-                <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-slate-200 text-slate-800 p-4 hidden group-hover:block z-50">
-                  <h4 className="text-xs font-bold uppercase text-slate-500 mb-2 border-b pb-1 flex justify-between">
-                    <span>Buzón del Superadministrador</span>
-                    <span className="text-[10px] text-blue-600">Mails CAE</span>
-                  </h4>
-                  <div className="space-y-2 max-h-60 overflow-y-auto">
-                    {notifications.length === 0 ? (
-                      <p className="text-xs text-slate-400 italic py-2 text-center">Sin notificaciones nuevas</p>
-                    ) : (
-                      notifications.map(n => (
-                        <div key={n.id} className="p-2 bg-slate-50 rounded border border-slate-100 text-xs">
-                          <p className="font-bold text-slate-700">{n.title}</p>
-                          <p className="text-slate-500 text-[11px] mt-0.5">{n.message}</p>
-                          <span className="text-[9px] text-slate-400 block mt-1">{n.date}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
               </div>
             )}
 
@@ -533,7 +514,7 @@ export default function App() {
                   currentUser.role === 'superadmin' ? 'bg-purple-900 text-purple-200' :
                   currentUser.role === 'corporativo' ? 'bg-blue-900 text-blue-200' : 'bg-emerald-900 text-emerald-200'
                 }`}>
-                  {currentUser.role === 'superadmin' ? 'Superadmin (SA)' :
+                  {currentUser.role === 'superadmin' ? 'SUPERADMIN (SA)' :
                    currentUser.role === 'corporativo' ? 'Usuario Corporativo (UC)' : 'Empresa Externa (UX)'}
                 </span>
               </div>
@@ -552,7 +533,7 @@ export default function App() {
 
       <div className="max-w-7xl mx-auto px-4 py-6 flex-1 w-full flex flex-col md:flex-row gap-6">
         
-        {/* NAVEGACIÓN LATERAL / MÓDULO CAE */}
+        {/* NAVEGACIÓN LATERAL */}
         <aside className="w-full md:w-64 bg-white rounded-xl border border-slate-200 shadow-sm p-4 shrink-0 h-fit space-y-6">
           <div className="space-y-1">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2">Navegación</span>
@@ -574,7 +555,6 @@ export default function App() {
             </button>
           </div>
 
-          {/* MÓDULO DESTACADO LATERAL: CAE */}
           <div className="pt-4 border-t border-slate-100 space-y-2">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2">Módulo Especial</span>
             
@@ -587,7 +567,7 @@ export default function App() {
                 <span>Módulo CAE</span>
               </div>
               <span className="text-[10px] bg-slate-900/40 px-1.5 py-0.5 rounded text-white font-mono">
-                {currentUser.role === 'externo' ? 'UX' : currentUser.role === 'corporativo' ? 'UC' : 'SA'}
+                SA
               </span>
             </button>
           </div>
@@ -786,340 +766,252 @@ export default function App() {
             </div>
           )}
 
-          {/* TAB: MÓDULO CAE (SEGÚN ROL) */}
+          {/* TAB: MÓDULO CAE CON FILTRO DE EMPRESA Y TRABAJADORES */}
           {activeTab === 'cae' && (
             <div className="space-y-6">
-              <div className="bg-slate-800 text-white p-6 rounded-xl shadow-sm flex items-center justify-between">
+              {/* Encabezado Módulo CAE */}
+              <div className="bg-slate-800 text-white p-6 rounded-xl shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div>
                   <div className="flex items-center space-x-2">
                     <HardHat className="w-6 h-6 text-amber-400" />
                     <h2 className="text-xl font-bold">Coordinación de Actividades Empresariales (CAE)</h2>
                   </div>
                   <p className="text-xs text-slate-300 mt-1">
-                    {currentUser.role === 'superadmin' && 'Panel Global de Validación de Coordinación. Como SA puedes marcar el estado directamente o validar acceso.'}
-                    {currentUser.role === 'corporativo' && 'Consulta de empresas externas autorizadas para acceder a tus centros.'}
-                    {currentUser.role === 'externo' && 'Recepción de documentación del centro y envío de coordinación de tu empresa.'}
+                    Panel Global de Validación de Coordinación. Como SA puedes marcar el estado directamente o validar acceso.
                   </p>
                 </div>
 
-                <span className="hidden sm:block text-xs bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-600 font-mono">
-                  {currentUser.role === 'superadmin' && 'Modo: Validaciones (SA)'}
-                  {currentUser.role === 'corporativo' && 'Modo: Consulta Centro (UC)'}
-                  {currentUser.role === 'externo' && 'Modo: Empresa Externa (UX)'}
+                <span className="text-xs bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-600 font-mono shrink-0">
+                  Modo: Validaciones (SA)
                 </span>
               </div>
 
-              {/* VISTA 1: USUARIO DE EMPRESA EXTERNA (UX) */}
-              {currentUser.role === 'externo' && (
-                <div className="space-y-6">
-                  {accessibleCentres.map(centre => {
-                    const record = caeRecords.find(r => r.centreId === centre.id && r.userEmail === currentUser.email);
-                    const isRead = record ? record.docsRead : false;
-                    const isSent = record ? record.docsSent : false;
-                    const status = record ? record.status : 'pendiente_lectura';
-
-                    return (
-                      <div key={centre.id} className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-6">
-                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-4 gap-2">
-                          <div>
-                            <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 text-slate-600 rounded">
-                              {centre.zone}
-                            </span>
-                            <h3 className="text-lg font-bold text-slate-800 mt-1">{centre.name}</h3>
-                          </div>
-
-                          <div>
-                            {status === 'completado' && (
-                              <span className="px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full flex items-center gap-1.5">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Coordinación Completada (Acceso Permitido)
-                              </span>
-                            )}
-                            {status === 'documentos_enviados' && (
-                              <span className="px-3 py-1 bg-amber-100 text-amber-800 text-xs font-bold rounded-full flex items-center gap-1.5">
-                                <Clock className="w-4 h-4 text-amber-600" /> Pendiente de Validación por el SA
-                              </span>
-                            )}
-                            {status === 'pendiente_lectura' && (
-                              <span className="px-3 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-full flex items-center gap-1.5">
-                                <AlertTriangle className="w-4 h-4 text-slate-500" /> Pendiente de revisión
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Paso 1: Consultar documentos del centro */}
-                        <div className="space-y-3">
-                          <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                            1. Documentación e información del Centro para la Empresa Externa
-                          </h4>
-
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            {[
-                              { label: 'Evaluación de Riesgos', list: centre.docs.evaluacion_riesgos },
-                              { label: 'Información de Riesgos', list: centre.docs.informacion_riesgos },
-                              { label: 'Medidas de Emergencia', list: centre.docs.medidas_emergencia }
-                            ].map((item, i) => (
-                              <div key={i} className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs">
-                                <p className="font-bold text-slate-700 mb-1">{item.label}</p>
-                                {item.list && item.list.length > 0 ? (
-                                  item.list.map(d => (
-                                    <a key={d.id} href={d.link} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline flex items-center gap-1 truncate mt-0.5">
-                                      <FileText className="w-3 h-3 shrink-0" /> {d.name}
-                                    </a>
-                                  ))
-                                ) : (
-                                  <span className="text-slate-400 italic">No disponible</span>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-
-                          <label className="flex items-center space-x-2 mt-3 p-3 bg-blue-50/50 rounded-lg border border-blue-100 cursor-pointer text-xs font-medium text-slate-700">
-                            <input 
-                              type="checkbox" 
-                              checked={isRead}
-                              disabled={status === 'completado'}
-                              onChange={() => handleToggleReadDocs(centre.id)}
-                              className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                            />
-                            <span>He leído y recibido correctamente la información de PRL de este centro de trabajo.</span>
-                          </label>
-                        </div>
-
-                        {/* Paso 2: Enviar Documentación y solicitar acceso */}
-                        <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
-                          <div className="text-xs text-slate-500">
-                            <p className="font-semibold text-slate-700">2. Envío de documentación CAE de tu empresa</p>
-                            <p>Envía la documentación requerida. El Superadministrador recibirá el aviso para liberar el acceso.</p>
-                          </div>
-
-                          <button 
-                            disabled={!isRead || isSent}
-                            onClick={() => handleSendCaeDocs(centre.id)}
-                            className={`py-2.5 px-5 rounded-lg text-xs font-bold flex items-center gap-2 transition ${
-                              isSent ? 'bg-emerald-600 text-white cursor-default' :
-                              !isRead ? 'bg-slate-200 text-slate-400 cursor-not-allowed' :
-                              'bg-blue-600 text-white hover:bg-blue-700 shadow-md'
-                            }`}
-                          >
-                            <Send className="w-4 h-4" />
-                            {isSent ? 'Documentación Enviada' : 'Enviar Documentación de Coordinación'}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+              {/* BARRA DE HERRAMIENTAS / FILTRO POR EMPRESA */}
+              <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div className="flex items-center space-x-2">
+                  <Filter className="w-4 h-4 text-slate-500" />
+                  <span className="text-xs font-bold uppercase text-slate-600">Filtrar por Empresa Externa:</span>
                 </div>
-              )}
 
-              {/* VISTA 2: USUARIO CORPORATIVO (UC) */}
-              {currentUser.role === 'corporativo' && (
-                <div className="space-y-6">
-                  <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4">
-                    <h3 className="text-base font-bold text-slate-800">
-                      Empresas Externas con Acceso y Estado CAE en tus Centros
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      Como usuario corporativo, consulta las contratas que han solicitado o completado la coordinación.
-                    </p>
+                <select 
+                  value={filterCompany}
+                  onChange={(e) => setFilterCompany(e.target.value)}
+                  className="w-full sm:w-64 px-3 py-2 border border-slate-300 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50"
+                >
+                  {companyList.map((comp, i) => (
+                    <option key={i} value={comp}>{comp}</option>
+                  ))}
+                </select>
+              </div>
 
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs text-slate-600">
-                        <thead className="bg-slate-50 text-slate-500 font-semibold uppercase tracking-wider border-b">
-                          <tr>
-                            <th className="px-4 py-3">Centro</th>
-                            <th className="px-4 py-3">Empresa Externa</th>
-                            <th className="px-4 py-3">Correo Contacto</th>
-                            <th className="px-4 py-3">Estado CAE</th>
-                            <th className="px-4 py-3">Acceso al Centro</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {accessibleCentres.map(centre => {
-                            const centreRecords = caeRecords.filter(r => r.centreId === centre.id);
+              {/* TABLA PRINCIPAL DE CAE CON TRABAJADORES Y BOTÓN ROJO/VERDE */}
+              <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4">
+                <div>
+                  <h3 className="text-base font-bold text-slate-800">Validación de Solicitudes CAE y Liberación de Acceso</h3>
+                  <p className="text-xs text-slate-500">
+                    Como SA puedes modificar directamente los estados (si los recibiste por email) o hacer clic en OK para validar el acceso.
+                  </p>
+                </div>
 
-                            if (centreRecords.length === 0) {
-                              return (
-                                <tr key={centre.id}>
-                                  <td className="px-4 py-3 font-semibold text-slate-800">{centre.name}</td>
-                                  <td colSpan="4" className="px-4 py-3 text-slate-400 italic">
-                                    No hay empresas externas registradas para este centro.
-                                  </td>
-                                </tr>
-                              );
-                            }
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-600">
+                    <thead className="bg-slate-50 text-slate-500 font-semibold uppercase tracking-wider border-b">
+                      <tr>
+                        <th className="px-4 py-3">Empresa Externa / Trabajadores</th>
+                        <th className="px-4 py-3">Centro Solicitado</th>
+                        <th className="px-4 py-3 text-center">Lectura PRL (Click SA)</th>
+                        <th className="px-4 py-3 text-center">Envío Doc. (Click SA)</th>
+                        <th className="px-4 py-3">Estado Actual</th>
+                        <th className="px-4 py-3 text-right">Acción (Validación SA)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredCaeRecords.length === 0 ? (
+                        <tr>
+                          <td colSpan="6" className="px-4 py-6 text-center text-slate-400 italic">
+                            No hay solicitudes CAE registradas para este filtro.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredCaeRecords.map(rec => {
+                          const centre = centres.find(c => c.id === rec.centreId);
+                          const isCompleted = rec.status === 'completado';
 
-                            return centreRecords.map(rec => (
-                              <tr key={rec.id} className="hover:bg-slate-50">
-                                <td className="px-4 py-3 font-semibold text-slate-800">{centre.name}</td>
-                                <td className="px-4 py-3 font-medium text-slate-700">{rec.companyName}</td>
-                                <td className="px-4 py-3">{rec.userEmail}</td>
-                                <td className="px-4 py-3">
-                                  {rec.status === 'completado' && (
-                                    <span className="px-2.5 py-1 bg-emerald-100 text-emerald-700 font-bold rounded-full inline-flex items-center gap-1">
-                                      <CheckCircle2 className="w-3 h-3" /> Validado por SA
-                                    </span>
+                          return (
+                            <React.Fragment key={rec.id}>
+                              {/* FILA DE LA EMPRESA */}
+                              <tr className="hover:bg-slate-50/80 bg-slate-50/30">
+                                <td className="px-4 py-4">
+                                  <p className="font-bold text-slate-800 text-sm">{rec.companyName}</p>
+                                  <p className="text-[10px] text-slate-400 mb-2">{rec.userEmail}</p>
+
+                                  {/* Botón '+' debajo de la empresa para introducir trabajadores */}
+                                  <button 
+                                    onClick={() => setAddingWorkerForRecord(addingWorkerForRecord === rec.id ? null : rec.id)}
+                                    className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded border border-blue-200 text-[11px] font-semibold transition"
+                                    title="Añadir trabajador autorizado para esta empresa"
+                                  >
+                                    <Plus className="w-3.5 h-3.5 text-blue-600" />
+                                    <span>Añadir trabajador</span>
+                                  </button>
+
+                                  {/* Formulario desplegable para introducir trabajador */}
+                                  {addingWorkerForRecord === rec.id && (
+                                    <div className="mt-3 p-3 bg-white border border-blue-200 rounded-lg shadow-md space-y-2 max-w-xs">
+                                      <span className="text-[11px] font-bold text-slate-700 block">Nuevo Trabajador</span>
+                                      <input 
+                                        type="text"
+                                        placeholder="Nombre y Apellidos"
+                                        className="w-full px-2 py-1 border text-xs rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                        value={newWorkerName}
+                                        onChange={(e) => setNewWorkerName(e.target.value)}
+                                      />
+                                      <input 
+                                        type="text"
+                                        placeholder="DNI / NIE"
+                                        className="w-full px-2 py-1 border text-xs rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                        value={newWorkerDni}
+                                        onChange={(e) => setNewWorkerDni(e.target.value)}
+                                      />
+                                      <div className="flex justify-end gap-1 pt-1">
+                                        <button 
+                                          onClick={() => setAddingWorkerForRecord(null)}
+                                          className="px-2 py-1 text-[10px] text-slate-500 hover:bg-slate-100 rounded"
+                                        >
+                                          Cancelar
+                                        </button>
+                                        <button 
+                                          onClick={() => handleAddWorker(rec.id)}
+                                          className="px-2.5 py-1 text-[10px] bg-blue-600 text-white font-bold rounded hover:bg-blue-700"
+                                        >
+                                          Guardar
+                                        </button>
+                                      </div>
+                                    </div>
                                   )}
-                                  {rec.status === 'documentos_enviados' && (
-                                    <span className="px-2.5 py-1 bg-amber-100 text-amber-700 font-bold rounded-full inline-flex items-center gap-1">
-                                      <Clock className="w-3 h-3" /> En revisión por SA
+                                </td>
+
+                                <td className="px-4 py-4 font-medium text-slate-700 align-top pt-4">
+                                  {centre?.name}
+                                </td>
+
+                                {/* Lectura PRL */}
+                                <td className="px-4 py-4 text-center align-top pt-4">
+                                  <button 
+                                    onClick={() => handleToggleSaDocRead(rec.id)}
+                                    className={`px-2.5 py-1 rounded border font-semibold inline-flex items-center gap-1.5 transition ${
+                                      rec.docsRead 
+                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100' 
+                                        : 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200'
+                                    }`}
+                                  >
+                                    {rec.docsRead ? <CheckSquare className="w-3.5 h-3.5 text-emerald-600" /> : <Square className="w-3.5 h-3.5" />}
+                                    <span>{rec.docsRead ? 'Sí (OK)' : 'No'}</span>
+                                  </button>
+                                </td>
+
+                                {/* Envío Doc */}
+                                <td className="px-4 py-4 text-center align-top pt-4">
+                                  <button 
+                                    onClick={() => handleToggleSaDocSent(rec.id)}
+                                    className={`px-2.5 py-1 rounded border font-semibold inline-flex items-center gap-1.5 transition ${
+                                      rec.docsSent 
+                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100' 
+                                        : 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200'
+                                    }`}
+                                  >
+                                    {rec.docsSent ? <CheckSquare className="w-3.5 h-3.5 text-emerald-600" /> : <Square className="w-3.5 h-3.5" />}
+                                    <span>{rec.docsSent ? 'Sí (Recibido)' : 'No'}</span>
+                                  </button>
+                                </td>
+
+                                {/* Estado Actual: Ahora marca sólo 'Pendiente' cuando no se ha validado */}
+                                <td className="px-4 py-4 align-top pt-4">
+                                  {isCompleted ? (
+                                    <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 font-bold rounded-full text-[11px]">
+                                      Acceso Libre
                                     </span>
-                                  )}
-                                  {rec.status === 'pendiente_lectura' && (
-                                    <span className="px-2.5 py-1 bg-slate-100 text-slate-600 font-bold rounded-full inline-flex items-center gap-1">
+                                  ) : (
+                                    <span className="px-2.5 py-1 bg-slate-100 text-slate-600 font-bold rounded-full text-[11px]">
                                       Pendiente
                                     </span>
                                   )}
                                 </td>
-                                <td className="px-4 py-3 font-bold">
-                                  {rec.status === 'completado' ? (
-                                    <span className="text-emerald-600 flex items-center gap-1">
-                                      <Check className="w-4 h-4" /> PERMITIDO
-                                    </span>
-                                  ) : (
-                                    <span className="text-rose-500 flex items-center gap-1">
-                                      <XCircle className="w-4 h-4" /> DENEGADO
-                                    </span>
-                                  )}
+
+                                {/* Acción Validación: ROJO por defecto, VERDE al activarse */}
+                                <td className="px-4 py-4 text-right align-top pt-4">
+                                  <button 
+                                    onClick={() => handleToggleApproveCae(rec.id)}
+                                    className={`py-2 px-3.5 rounded-lg font-bold text-xs shadow-md transition flex items-center gap-1.5 ml-auto text-white ${
+                                      isCompleted 
+                                        ? 'bg-emerald-600 hover:bg-emerald-700' 
+                                        : 'bg-rose-600 hover:bg-rose-700 active:scale-95'
+                                    }`}
+                                  >
+                                    <Check className="w-4 h-4" />
+                                    <span>{isCompleted ? 'Validado y Libres (OK)' : 'Validar y Liberar Acceso (OK)'}</span>
+                                  </button>
                                 </td>
                               </tr>
-                            ));
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              )}
 
-              {/* VISTA 3: SUPERADMINISTRADOR (SA) - AHORA CON CONTROLES MANUALES ACTIVOS */}
-              {currentUser.role === 'superadmin' && (
-                <div className="space-y-6">
-                  <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4">
-                    <div className="flex justify-between items-center border-b pb-3">
-                      <div>
-                        <h3 className="text-base font-bold text-slate-800">Validación de Solicitudes CAE y Liberación de Acceso</h3>
-                        <p className="text-xs text-slate-500">
-                          Como SA puedes modificar directamente los estados (si los recibiste por email) o hacer clic en OK para validar el acceso.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs text-slate-600">
-                        <thead className="bg-slate-50 text-slate-500 font-semibold uppercase tracking-wider border-b">
-                          <tr>
-                            <th className="px-4 py-3">Empresa Externa</th>
-                            <th className="px-4 py-3">Centro Solicitado</th>
-                            <th className="px-4 py-3 text-center">Lectura PRL (Click SA)</th>
-                            <th className="px-4 py-3 text-center">Envío Doc. (Click SA)</th>
-                            <th className="px-4 py-3">Estado Actual</th>
-                            <th className="px-4 py-3 text-right">Acción (Validación SA)</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {caeRecords.length === 0 ? (
-                            <tr>
-                              <td colSpan="6" className="px-4 py-6 text-center text-slate-400 italic">
-                                No hay registros de coordinaciones enviadas.
-                              </td>
-                            </tr>
-                          ) : (
-                            caeRecords.map(rec => {
-                              const centre = centres.find(c => c.id === rec.centreId);
-
-                              return (
-                                <tr key={rec.id} className="hover:bg-slate-50">
-                                  <td className="px-4 py-3">
-                                    <p className="font-bold text-slate-800">{rec.companyName}</p>
-                                    <p className="text-[10px] text-slate-400">{rec.userEmail}</p>
-                                  </td>
-                                  <td className="px-4 py-3 font-medium text-slate-700">{centre?.name}</td>
-                                  
-                                  {/* Columna con check interactivo directo para SA */}
-                                  <td className="px-4 py-3 text-center">
-                                    <button 
-                                      onClick={() => handleToggleSaDocRead(rec.id)}
-                                      className={`px-2.5 py-1 rounded border font-semibold inline-flex items-center gap-1.5 transition ${
-                                        rec.docsRead 
-                                          ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100' 
-                                          : 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200'
-                                      }`}
-                                      title="Haz clic para cambiar manualmente este estado como SA"
-                                    >
-                                      {rec.docsRead ? <CheckSquare className="w-3.5 h-3.5 text-emerald-600" /> : <Square className="w-3.5 h-3.5" />}
-                                      <span>{rec.docsRead ? 'Sí (OK)' : 'No'}</span>
-                                    </button>
-                                  </td>
-
-                                  {/* Columna con check interactivo directo para SA */}
-                                  <td className="px-4 py-3 text-center">
-                                    <button 
-                                      onClick={() => handleToggleSaDocSent(rec.id)}
-                                      className={`px-2.5 py-1 rounded border font-semibold inline-flex items-center gap-1.5 transition ${
-                                        rec.docsSent 
-                                          ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100' 
-                                          : 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200'
-                                      }`}
-                                      title="Haz clic si recibiste los documentos por mail o externos para marcar Sí"
-                                    >
-                                      {rec.docsSent ? <CheckSquare className="w-3.5 h-3.5 text-emerald-600" /> : <Square className="w-3.5 h-3.5" />}
-                                      <span>{rec.docsSent ? 'Sí (Recibido)' : 'No'}</span>
-                                    </button>
-                                  </td>
-
-                                  <td className="px-4 py-3">
-                                    {rec.status === 'completado' && (
-                                      <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 font-bold rounded-full">
-                                        Acceso Libre
+                              {/* LISTA DE TRABAJADORES AUTORIZADOS DEBAJO DE LA EMPRESA */}
+                              {(rec.workers || []).length > 0 && (
+                                <tr className="bg-slate-50/60 border-b border-slate-200/80">
+                                  <td colSpan="6" className="px-4 py-3 pl-8">
+                                    <div className="space-y-2">
+                                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                                        Trabajadores Autorizados ({rec.workers.length}):
                                       </span>
-                                    )}
-                                    {rec.status === 'documentos_enviados' && (
-                                      <span className="px-2.5 py-1 bg-amber-100 text-amber-800 font-bold rounded-full">
-                                        Pendiente Validar
-                                      </span>
-                                    )}
-                                    {rec.status === 'pendiente_lectura' && (
-                                      <span className="px-2.5 py-1 bg-slate-100 text-slate-600 font-bold rounded-full">
-                                        Pendiente Envío
-                                      </span>
-                                    )}
-                                  </td>
 
-                                  <td className="px-4 py-3 text-right">
-                                    {rec.status === 'completado' ? (
-                                      <div className="flex items-center justify-end gap-2">
-                                        <span className="text-emerald-600 font-bold text-xs flex items-center gap-1">
-                                          <Check className="w-4 h-4" /> Validado OK
-                                        </span>
-                                        <button 
-                                          onClick={() => handleRevokeCae(rec.id)}
-                                          className="text-[10px] text-slate-400 hover:text-rose-600 underline"
-                                        >
-                                          (Deshacer)
-                                        </button>
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                                        {rec.workers.map(worker => (
+                                          <div 
+                                            key={worker.id}
+                                            className="p-2.5 bg-white border border-slate-200 rounded-lg flex items-center justify-between text-xs shadow-sm hover:border-slate-300 transition"
+                                          >
+                                            <div className="truncate pr-2">
+                                              <p className="font-bold text-slate-800 truncate">{worker.name}</p>
+                                              <p className="text-[10px] text-slate-400 font-mono">DNI: {worker.dni}</p>
+                                            </div>
+
+                                            <div className="flex items-center space-x-1.5 shrink-0">
+                                              {/* Botón OK individual para cada trabajador */}
+                                              <button 
+                                                onClick={() => handleToggleWorkerApproval(rec.id, worker.id)}
+                                                className={`px-2 py-0.5 rounded border text-[10px] font-bold flex items-center gap-1 transition ${
+                                                  worker.approved 
+                                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300' 
+                                                    : 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200'
+                                                }`}
+                                              >
+                                                {worker.approved ? <CheckSquare className="w-3 h-3 text-emerald-600" /> : <Square className="w-3 h-3" />}
+                                                <span>{worker.approved ? 'OK' : 'No'}</span>
+                                              </button>
+
+                                              {/* Eliminar trabajador */}
+                                              <button 
+                                                onClick={() => handleDeleteWorker(rec.id, worker.id)}
+                                                className="p-1 text-slate-400 hover:text-rose-600 rounded transition"
+                                                title="Eliminar trabajador"
+                                              >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        ))}
                                       </div>
-                                    ) : (
-                                      /* Botón siempre activo para el SA para poder pulsar OK directamente */
-                                      <button 
-                                        onClick={() => handleApproveCae(rec.id)}
-                                        className="py-1.5 px-3 rounded-lg font-bold text-xs shadow transition flex items-center gap-1 ml-auto bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95"
-                                      >
-                                        <Check className="w-3.5 h-3.5" />
-                                        Validar y Liberar Acceso (OK)
-                                      </button>
-                                    )}
+                                    </div>
                                   </td>
                                 </tr>
-                              );
-                            })
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+                              )}
+                            </React.Fragment>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
                 </div>
-              )}
+              </div>
             </div>
           )}
 
@@ -1169,7 +1061,7 @@ export default function App() {
             </div>
           )}
 
-          {/* TAB: CARGA MASIVA (SÓLO SA) */}
+          {/* TAB: CARGA MASIVA */}
           {activeTab === 'excel' && currentUser.role === 'superadmin' && (
             <div className="bg-white p-8 rounded-xl border border-slate-200 shadow-sm space-y-6">
               <div>
@@ -1203,7 +1095,7 @@ export default function App() {
             </div>
           )}
 
-          {/* TAB: GESTIÓN DE PERFILES (SÓLO SA) */}
+          {/* TAB: GESTIÓN DE PERFILES */}
           {activeTab === 'users' && currentUser.role === 'superadmin' && (
             <div className="space-y-6">
               <div>
@@ -1247,7 +1139,7 @@ export default function App() {
         </main>
       </div>
 
-      {/* Modal para Enlaces de SharePoint por Categoría */}
+      {/* Modal SharePoint */}
       {editDocModal.open && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 space-y-6 max-h-[90vh] flex flex-col">
