@@ -25,11 +25,9 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
-// Usuarios de prueba iniciales
+// Único superadministrador inicial
 const INITIAL_USERS = [
-  { id: '1', email: 'julio.benages@neural.es', code: 'N3UR4L2026X', name: 'Julio Benages', role: 'superadmin', assignedCentres: ['ALL'] },
-  { id: '2', email: 'tecnico.madrid@neural.es', code: 'M4DR1D2026', name: 'Técnico Madrid', role: 'gestor', assignedCentres: ['c1'] },
-  { id: '3', email: 'tecnico.valencia@neural.es', code: 'V4L3NC1426', name: 'Técnico Valencia', role: 'gestor', assignedCentres: ['c2'] },
+  { id: '1', email: 'neuralprl', code: 'Neuralprl@', name: 'Superadministrador', role: 'superadmin', assignedCentres: ['ALL'] }
 ];
 
 const INITIAL_GENERAL_DOCS = [
@@ -43,7 +41,7 @@ const INITIAL_CENTRES = [
     id: 'c1',
     name: 'Centro Neural Madrid - Castellana',
     zone: 'Madrid Norte',
-    users: ['julio.benages@neural.es', 'tecnico.madrid@neural.es'],
+    users: ['neuralprl'],
     docs: {
       evaluacion_riesgos: [
         { id: 'd1', name: 'Evaluacion_Riesgos_2026_Madrid.pdf', link: 'https://sharepoint.com/eval-madrid.pdf' }
@@ -58,7 +56,7 @@ const INITIAL_CENTRES = [
     id: 'c2',
     name: 'Centro Neural Valencia - Mestalla',
     zone: 'Comunidad Valenciana',
-    users: ['julio.benages@neural.es', 'tecnico.valencia@neural.es'],
+    users: ['neuralprl'],
     docs: {
       evaluacion_riesgos: [
         { id: 'd3', name: 'Evaluacion_Riesgos_Mestalla_v1.pdf', link: 'https://sharepoint.com/eval-valencia.pdf' }
@@ -82,7 +80,6 @@ const extractFileNameFromUrl = (url) => {
       return decodeURIComponent(filename);
     }
   } catch (e) {
-    // Si no es un URL estándar completo, extraer la última parte del texto
     const parts = url.split('/');
     const last = parts.pop() || parts.pop();
     if (last) return decodeURIComponent(last.split('?')[0]);
@@ -117,14 +114,14 @@ export default function App() {
     e.preventDefault();
     setLoginError('');
     const user = users.find(
-      u => u.email.toLowerCase().trim() === loginEmail.toLowerCase().trim() && 
+      u => u.email.trim() === loginEmail.trim() && 
            u.code.trim() === loginCode.trim()
     );
 
     if (user) {
       setCurrentUser(user);
     } else {
-      setLoginError('Correo o código alfanumérico incorrectos.');
+      setLoginError('Usuario o contraseña incorrectos.');
     }
   };
 
@@ -190,7 +187,7 @@ export default function App() {
                 id: `u_${Date.now()}_${Math.random()}`,
                 email: email,
                 code: code,
-                name: email.split('@')[0],
+                name: email.includes('@') ? email.split('@')[0] : email,
                 role: 'gestor',
                 assignedCentres: []
               });
@@ -298,24 +295,24 @@ export default function App() {
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Correo Electrónico</label>
+              <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Usuario</label>
               <input 
-                type="email" 
+                type="text" 
                 required
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                placeholder="ejemplo@neural.es"
+                placeholder="Nombre de usuario"
                 value={loginEmail}
                 onChange={(e) => setLoginEmail(e.target.value)}
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Código Alfanumérico (Contraseña)</label>
+              <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Contraseña</label>
               <input 
                 type="password" 
                 required
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                placeholder="Tu código de acceso"
+                placeholder="Tu contraseña"
                 value={loginCode}
                 onChange={(e) => setLoginCode(e.target.value)}
               />
@@ -638,8 +635,8 @@ export default function App() {
               <ul className="list-disc pl-4 space-y-1">
                 <li><strong>Columna A:</strong> Nombre del Centro</li>
                 <li><strong>Columna B:</strong> Zona</li>
-                <li><strong>Columnas C, E, G, I, K:</strong> Correo del usuario</li>
-                <li><strong>Columnas D, F, H, J, L:</strong> Código Alfanumérico del usuario (Contraseña)</li>
+                <li><strong>Columnas C, E, G, I, K:</strong> Usuario / Correo</li>
+                <li><strong>Columnas D, F, H, J, L:</strong> Contraseña del usuario</li>
               </ul>
             </div>
 
@@ -663,7 +660,7 @@ export default function App() {
           <div className="space-y-6">
             <div>
               <h2 className="text-xl font-bold text-slate-800">Usuarios Registrados</h2>
-              <p className="text-sm text-slate-500">Listado de usuarios y contraseñas (código alfanumérico).</p>
+              <p className="text-sm text-slate-500">Listado de usuarios y contraseñas de acceso.</p>
             </div>
 
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -671,8 +668,8 @@ export default function App() {
                 <thead className="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b">
                   <tr>
                     <th className="px-6 py-3">Nombre / ID</th>
-                    <th className="px-6 py-3">Correo</th>
-                    <th className="px-6 py-3">Código Alfanumérico</th>
+                    <th className="px-6 py-3">Usuario</th>
+                    <th className="px-6 py-3">Contraseña</th>
                     <th className="px-6 py-3">Rol</th>
                   </tr>
                 </thead>
