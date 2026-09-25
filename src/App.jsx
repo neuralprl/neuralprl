@@ -21,7 +21,9 @@ import {
   Check,
   Clock,
   Send,
-  Eye
+  Eye,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -134,7 +136,6 @@ export default function App() {
 
     if (user) {
       setCurrentUser(user);
-      // Redirigir a vista según rol por defecto
       if (user.role === 'externo') {
         setActiveTab('cae');
       } else {
@@ -292,7 +293,6 @@ export default function App() {
       }
     });
 
-    // Simulación de correo enviado al Superadministrador
     const newNotif = {
       id: `notif_${Date.now()}`,
       title: 'Nueva Documentación CAE Enviada',
@@ -305,11 +305,55 @@ export default function App() {
     alert('Documentación de coordinación enviada con éxito. Se ha notificado al Superadministrador para su validación.');
   };
 
-  // Validar y Aprobar Acceso (Superadministrador SA)
+  // Cambios manuales directos por parte del Superadministrador (SA)
+  const handleToggleSaDocRead = (recordId) => {
+    setCaeRecords(prev => prev.map(r => {
+      if (r.id === recordId) {
+        const newRead = !r.docsRead;
+        return { 
+          ...r, 
+          docsRead: newRead,
+          status: r.status === 'completado' ? 'completado' : (newRead && r.docsSent ? 'documentos_enviados' : 'pendiente_lectura')
+        };
+      }
+      return r;
+    }));
+  };
+
+  const handleToggleSaDocSent = (recordId) => {
+    setCaeRecords(prev => prev.map(r => {
+      if (r.id === recordId) {
+        const newSent = !r.docsSent;
+        return { 
+          ...r, 
+          docsSent: newSent,
+          status: r.status === 'completado' ? 'completado' : (newSent ? 'documentos_enviados' : 'pendiente_lectura')
+        };
+      }
+      return r;
+    }));
+  };
+
+  // Validar y Aprobar Acceso Directo (Superadministrador SA)
   const handleApproveCae = (recordId) => {
     setCaeRecords(prev => prev.map(r => {
       if (r.id === recordId) {
-        return { ...r, status: 'completado' };
+        return { 
+          ...r, 
+          docsRead: true,
+          docsSent: true,
+          status: 'completado' 
+        };
+      }
+      return r;
+    }));
+  };
+
+  // Alternar o revocar la aprobación del SA
+  const handleRevokeCae = (recordId) => {
+    setCaeRecords(prev => prev.map(r => {
+      if (r.id === recordId) {
+        return { ...r, status: r.docsSent ? 'documentos_enviados' : 'pendiente_lectura' };
       }
       return r;
     }));
@@ -752,7 +796,7 @@ export default function App() {
                     <h2 className="text-xl font-bold">Coordinación de Actividades Empresariales (CAE)</h2>
                   </div>
                   <p className="text-xs text-slate-300 mt-1">
-                    {currentUser.role === 'superadmin' && 'Panel Global de Validación de Coordinación para Centros de Trabajo.'}
+                    {currentUser.role === 'superadmin' && 'Panel Global de Validación de Coordinación. Como SA puedes marcar el estado directamente o validar acceso.'}
                     {currentUser.role === 'corporativo' && 'Consulta de empresas externas autorizadas para acceder a tus centros.'}
                     {currentUser.role === 'externo' && 'Recepción de documentación del centro y envío de coordinación de tu empresa.'}
                   </p>
@@ -934,7 +978,7 @@ export default function App() {
                                     </span>
                                   ) : (
                                     <span className="text-rose-500 flex items-center gap-1">
-                                      <XCircle className="w-4 h-4" /> DENEGADO / DENEGADO OK
+                                      <XCircle className="w-4 h-4" /> DENEGADO
                                     </span>
                                   )}
                                 </td>
@@ -948,7 +992,7 @@ export default function App() {
                 </div>
               )}
 
-              {/* VISTA 3: SUPERADMINISTRADOR (SA) */}
+              {/* VISTA 3: SUPERADMINISTRADOR (SA) - AHORA CON CONTROLES MANUALES ACTIVOS */}
               {currentUser.role === 'superadmin' && (
                 <div className="space-y-6">
                   <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4">
@@ -956,7 +1000,7 @@ export default function App() {
                       <div>
                         <h3 className="text-base font-bold text-slate-800">Validación de Solicitudes CAE y Liberación de Acceso</h3>
                         <p className="text-xs text-slate-500">
-                          Revisa la documentación enviada por las empresas externas para pulsar OK y dejar libre su acceso.
+                          Como SA puedes modificar directamente los estados (si los recibiste por email) o hacer clic en OK para validar el acceso.
                         </p>
                       </div>
                     </div>
@@ -967,9 +1011,9 @@ export default function App() {
                           <tr>
                             <th className="px-4 py-3">Empresa Externa</th>
                             <th className="px-4 py-3">Centro Solicitado</th>
-                            <th className="px-4 py-3">Lectura PRL</th>
-                            <th className="px-4 py-3">Envío Doc.</th>
-                            <th className="px-4 py-3">Estado</th>
+                            <th className="px-4 py-3 text-center">Lectura PRL (Click SA)</th>
+                            <th className="px-4 py-3 text-center">Envío Doc. (Click SA)</th>
+                            <th className="px-4 py-3">Estado Actual</th>
                             <th className="px-4 py-3 text-right">Acción (Validación SA)</th>
                           </tr>
                         </thead>
@@ -991,20 +1035,39 @@ export default function App() {
                                     <p className="text-[10px] text-slate-400">{rec.userEmail}</p>
                                   </td>
                                   <td className="px-4 py-3 font-medium text-slate-700">{centre?.name}</td>
-                                  <td className="px-4 py-3">
-                                    {rec.docsRead ? (
-                                      <span className="text-emerald-600 font-semibold">Sí (Confirmado)</span>
-                                    ) : (
-                                      <span className="text-slate-400">No</span>
-                                    )}
+                                  
+                                  {/* Columna con check interactivo directo para SA */}
+                                  <td className="px-4 py-3 text-center">
+                                    <button 
+                                      onClick={() => handleToggleSaDocRead(rec.id)}
+                                      className={`px-2.5 py-1 rounded border font-semibold inline-flex items-center gap-1.5 transition ${
+                                        rec.docsRead 
+                                          ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100' 
+                                          : 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200'
+                                      }`}
+                                      title="Haz clic para cambiar manualmente este estado como SA"
+                                    >
+                                      {rec.docsRead ? <CheckSquare className="w-3.5 h-3.5 text-emerald-600" /> : <Square className="w-3.5 h-3.5" />}
+                                      <span>{rec.docsRead ? 'Sí (OK)' : 'No'}</span>
+                                    </button>
                                   </td>
-                                  <td className="px-4 py-3">
-                                    {rec.docsSent ? (
-                                      <span className="text-emerald-600 font-semibold">Sí (Recibido)</span>
-                                    ) : (
-                                      <span className="text-slate-400">No</span>
-                                    )}
+
+                                  {/* Columna con check interactivo directo para SA */}
+                                  <td className="px-4 py-3 text-center">
+                                    <button 
+                                      onClick={() => handleToggleSaDocSent(rec.id)}
+                                      className={`px-2.5 py-1 rounded border font-semibold inline-flex items-center gap-1.5 transition ${
+                                        rec.docsSent 
+                                          ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100' 
+                                          : 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200'
+                                      }`}
+                                      title="Haz clic si recibiste los documentos por mail o externos para marcar Sí"
+                                    >
+                                      {rec.docsSent ? <CheckSquare className="w-3.5 h-3.5 text-emerald-600" /> : <Square className="w-3.5 h-3.5" />}
+                                      <span>{rec.docsSent ? 'Sí (Recibido)' : 'No'}</span>
+                                    </button>
                                   </td>
+
                                   <td className="px-4 py-3">
                                     {rec.status === 'completado' && (
                                       <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 font-bold rounded-full">
@@ -1012,7 +1075,7 @@ export default function App() {
                                       </span>
                                     )}
                                     {rec.status === 'documentos_enviados' && (
-                                      <span className="px-2.5 py-1 bg-amber-100 text-amber-800 font-bold rounded-full animate-pulse">
+                                      <span className="px-2.5 py-1 bg-amber-100 text-amber-800 font-bold rounded-full">
                                         Pendiente Validar
                                       </span>
                                     )}
@@ -1022,20 +1085,25 @@ export default function App() {
                                       </span>
                                     )}
                                   </td>
+
                                   <td className="px-4 py-3 text-right">
                                     {rec.status === 'completado' ? (
-                                      <span className="text-emerald-600 font-bold text-xs flex items-center justify-end gap-1">
-                                        <Check className="w-4 h-4" /> Validado OK
-                                      </span>
+                                      <div className="flex items-center justify-end gap-2">
+                                        <span className="text-emerald-600 font-bold text-xs flex items-center gap-1">
+                                          <Check className="w-4 h-4" /> Validado OK
+                                        </span>
+                                        <button 
+                                          onClick={() => handleRevokeCae(rec.id)}
+                                          className="text-[10px] text-slate-400 hover:text-rose-600 underline"
+                                        >
+                                          (Deshacer)
+                                        </button>
+                                      </div>
                                     ) : (
+                                      /* Botón siempre activo para el SA para poder pulsar OK directamente */
                                       <button 
-                                        disabled={!rec.docsSent}
                                         onClick={() => handleApproveCae(rec.id)}
-                                        className={`py-1.5 px-3 rounded-lg font-bold text-xs shadow transition flex items-center gap-1 ml-auto ${
-                                          rec.docsSent 
-                                            ? 'bg-emerald-600 text-white hover:bg-emerald-700' 
-                                            : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                                        }`}
+                                        className="py-1.5 px-3 rounded-lg font-bold text-xs shadow transition flex items-center gap-1 ml-auto bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95"
                                       >
                                         <Check className="w-3.5 h-3.5" />
                                         Validar y Liberar Acceso (OK)
