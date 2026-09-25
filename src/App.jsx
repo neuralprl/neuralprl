@@ -2,7 +2,6 @@ import React, { useState, useMemo } from 'react';
 import { 
   Building2, 
   FileText, 
-  Upload, 
   Users, 
   AlertTriangle, 
   CheckCircle2, 
@@ -19,17 +18,13 @@ import {
   HardHat,
   Bell,
   Check,
-  Clock,
-  Send,
-  Eye,
   CheckSquare,
   Square,
-  UserPlus,
   Filter
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
-// --- DATOS INICIALES ---
+// --- DATOS INICIALES CON CONTRASEÑA CORRECTA ---
 
 const INITIAL_USERS = [
   { id: '1', email: 'neuralprl', code: 'Neuralprl@', name: 'Superadministrador', role: 'superadmin', assignedCentres: ['ALL'], company: 'Neural PRL' },
@@ -68,7 +63,6 @@ const INITIAL_CENTRES = [
   }
 ];
 
-// Registros de Coordinación CAE con Trabajadores Autorizados integrados
 const INITIAL_CAE_RECORDS = [
   {
     id: 'cae_1',
@@ -77,7 +71,7 @@ const INITIAL_CAE_RECORDS = [
     userEmail: 'prevencion@contratasvalencia.com',
     docsRead: false,
     docsSent: false,
-    status: 'pendiente', // 'pendiente' | 'documentos_enviados' | 'completado'
+    status: 'pendiente', // 'pendiente' | 'completado'
     updatedAt: '2026-02-20',
     workers: [
       { id: 'w1', name: 'Juan Pérez Gómez', dni: '12345678A', approved: false },
@@ -85,8 +79,6 @@ const INITIAL_CAE_RECORDS = [
     ]
   }
 ];
-
-const INITIAL_NOTIFICATIONS = [];
 
 const extractFileNameFromUrl = (url) => {
   if (!url) return '';
@@ -113,9 +105,8 @@ export default function App() {
   // Estado Global
   const [users, setUsers] = useState(INITIAL_USERS);
   const [centres, setCentres] = useState(INITIAL_CENTRES);
-  const [generalDocs, setGeneralDocs] = useState(INITIAL_GENERAL_DOCS);
+  const [generalDocs] = useState(INITIAL_GENERAL_DOCS);
   const [caeRecords, setCaeRecords] = useState(INITIAL_CAE_RECORDS);
-  const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
 
   // Navegación y Filtros
   const [activeTab, setActiveTab] = useState('centres');
@@ -175,7 +166,7 @@ export default function App() {
   // Lista única de empresas para el filtro
   const companyList = useMemo(() => {
     const list = caeRecords.map(r => r.companyName);
-    return ['TODAS', ...Array.from(newSet(list))];
+    return ['TODAS', ...Array.from(new Set(list))];
   }, [caeRecords]);
 
   // Registros CAE filtrados por empresa
@@ -184,9 +175,8 @@ export default function App() {
     return caeRecords.filter(r => r.companyName === filterCompany);
   }, [caeRecords, filterCompany]);
 
-  // --- ACCIONES EN TRABAJADORES Y CAE ---
+  // --- ACCIONES DE CAE Y TRABAJADORES ---
 
-  // Añadir trabajador a la empresa
   const handleAddWorker = (recordId) => {
     if (!newWorkerName.trim() || !newWorkerDni.trim()) return;
 
@@ -208,7 +198,6 @@ export default function App() {
     setAddingWorkerForRecord(null);
   };
 
-  // Eliminar trabajador
   const handleDeleteWorker = (recordId, workerId) => {
     setCaeRecords(prev => prev.map(r => {
       if (r.id === recordId) {
@@ -218,7 +207,6 @@ export default function App() {
     }));
   };
 
-  // Cambiar estado OK individual de un trabajador
   const handleToggleWorkerApproval = (recordId, workerId) => {
     setCaeRecords(prev => prev.map(r => {
       if (r.id === recordId) {
@@ -231,16 +219,10 @@ export default function App() {
     }));
   };
 
-  // Controles manuales del SA para Lectura PRL y Envío Doc.
   const handleToggleSaDocRead = (recordId) => {
     setCaeRecords(prev => prev.map(r => {
       if (r.id === recordId) {
-        const newRead = !r.docsRead;
-        return { 
-          ...r, 
-          docsRead: newRead,
-          status: r.status === 'completado' ? 'completado' : (newRead && r.docsSent ? 'documentos_enviados' : 'pendiente')
-        };
+        return { ...r, docsRead: !r.docsRead };
       }
       return r;
     }));
@@ -249,27 +231,19 @@ export default function App() {
   const handleToggleSaDocSent = (recordId) => {
     setCaeRecords(prev => prev.map(r => {
       if (r.id === recordId) {
-        const newSent = !r.docsSent;
-        return { 
-          ...r, 
-          docsSent: newSent,
-          status: r.status === 'completado' ? 'completado' : (newSent ? 'documentos_enviados' : 'pendiente')
-        };
+        return { ...r, docsSent: !r.docsSent };
       }
       return r;
     }));
   };
 
-  // Alternar aprobación global (Boton Rojo / Verde)
   const handleToggleApproveCae = (recordId) => {
     setCaeRecords(prev => prev.map(r => {
       if (r.id === recordId) {
         const isApproved = r.status === 'completado';
         if (isApproved) {
-          // Volver a rojo / pendiente
-          return { ...r, status: r.docsSent ? 'documentos_enviados' : 'pendiente' };
+          return { ...r, status: 'pendiente' };
         } else {
-          // Aprobar y pasar a verde
           return { 
             ...r, 
             docsRead: true,
@@ -419,7 +393,7 @@ export default function App() {
     }));
   };
 
-  // Login View
+  // --- VISTA DE LOGIN ---
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 font-sans">
@@ -439,7 +413,7 @@ export default function App() {
                 type="text" 
                 required
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
-                placeholder="neuralprl o correo@empresa.com"
+                placeholder="neuralprl"
                 value={loginEmail}
                 onChange={(e) => setLoginEmail(e.target.value)}
               />
@@ -451,7 +425,7 @@ export default function App() {
                 type="password" 
                 required
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
-                placeholder="Tu contraseña"
+                placeholder="••••••••"
                 value={loginCode}
                 onChange={(e) => setLoginCode(e.target.value)}
               />
@@ -473,7 +447,7 @@ export default function App() {
           </form>
 
           <div className="text-xs text-center text-slate-400 border-t pt-4">
-            Acceso según rol: Superadministrador (SA), Corporativo (UC) o Empresa Externa (UX).
+            Credenciales SA: <code className="bg-slate-100 px-1 rounded text-slate-700">neuralprl</code> / <code className="bg-slate-100 px-1 rounded text-slate-700">Neuralprl@</code>
           </div>
         </div>
       </div>
@@ -495,16 +469,9 @@ export default function App() {
 
           <div className="flex items-center space-x-4">
             {currentUser.role === 'superadmin' && (
-              <div className="relative group">
-                <button className="p-2 text-slate-300 hover:text-white rounded-lg relative">
-                  <Bell className="w-5 h-5" />
-                  {notifications.filter(n => !n.read).length > 0 && (
-                    <span className="absolute top-1 right-1 bg-amber-500 text-slate-900 font-bold text-[10px] w-4 h-4 rounded-full flex items-center justify-center">
-                      {notifications.filter(n => !n.read).length}
-                    </span>
-                  )}
-                </button>
-              </div>
+              <button className="p-2 text-slate-300 hover:text-white rounded-lg relative">
+                <Bell className="w-5 h-5" />
+              </button>
             )}
 
             <div className="text-right hidden sm:block">
@@ -766,10 +733,9 @@ export default function App() {
             </div>
           )}
 
-          {/* TAB: MÓDULO CAE CON FILTRO DE EMPRESA Y TRABAJADORES */}
+          {/* TAB: MÓDULO CAE */}
           {activeTab === 'cae' && (
             <div className="space-y-6">
-              {/* Encabezado Módulo CAE */}
               <div className="bg-slate-800 text-white p-6 rounded-xl shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div>
                   <div className="flex items-center space-x-2">
@@ -786,7 +752,7 @@ export default function App() {
                 </span>
               </div>
 
-              {/* BARRA DE HERRAMIENTAS / FILTRO POR EMPRESA */}
+              {/* BARRA DE HERRAMIENTAS: FILTRAR POR EMPRESA */}
               <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div className="flex items-center space-x-2">
                   <Filter className="w-4 h-4 text-slate-500" />
@@ -804,7 +770,7 @@ export default function App() {
                 </select>
               </div>
 
-              {/* TABLA PRINCIPAL DE CAE CON TRABAJADORES Y BOTÓN ROJO/VERDE */}
+              {/* TABLA PRINCIPAL CAE */}
               <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4">
                 <div>
                   <h3 className="text-base font-bold text-slate-800">Validación de Solicitudes CAE y Liberación de Acceso</h3>
@@ -839,23 +805,22 @@ export default function App() {
 
                           return (
                             <React.Fragment key={rec.id}>
-                              {/* FILA DE LA EMPRESA */}
+                              {/* FILA DE EMPRESA */}
                               <tr className="hover:bg-slate-50/80 bg-slate-50/30">
                                 <td className="px-4 py-4">
                                   <p className="font-bold text-slate-800 text-sm">{rec.companyName}</p>
                                   <p className="text-[10px] text-slate-400 mb-2">{rec.userEmail}</p>
 
-                                  {/* Botón '+' debajo de la empresa para introducir trabajadores */}
+                                  {/* Botón '+' para añadir trabajador */}
                                   <button 
                                     onClick={() => setAddingWorkerForRecord(addingWorkerForRecord === rec.id ? null : rec.id)}
                                     className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded border border-blue-200 text-[11px] font-semibold transition"
-                                    title="Añadir trabajador autorizado para esta empresa"
                                   >
                                     <Plus className="w-3.5 h-3.5 text-blue-600" />
                                     <span>Añadir trabajador</span>
                                   </button>
 
-                                  {/* Formulario desplegable para introducir trabajador */}
+                                  {/* Formulario desplegable para trabajador */}
                                   {addingWorkerForRecord === rec.id && (
                                     <div className="mt-3 p-3 bg-white border border-blue-200 rounded-lg shadow-md space-y-2 max-w-xs">
                                       <span className="text-[11px] font-bold text-slate-700 block">Nuevo Trabajador</span>
@@ -925,7 +890,7 @@ export default function App() {
                                   </button>
                                 </td>
 
-                                {/* Estado Actual: Ahora marca sólo 'Pendiente' cuando no se ha validado */}
+                                {/* Estado Actual: Únicamente aparece "Pendiente" o "Acceso Libre" */}
                                 <td className="px-4 py-4 align-top pt-4">
                                   {isCompleted ? (
                                     <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 font-bold rounded-full text-[11px]">
@@ -938,7 +903,7 @@ export default function App() {
                                   )}
                                 </td>
 
-                                {/* Acción Validación: ROJO por defecto, VERDE al activarse */}
+                                {/* Botón ROJO en reposo, VERDE al activarse */}
                                 <td className="px-4 py-4 text-right align-top pt-4">
                                   <button 
                                     onClick={() => handleToggleApproveCae(rec.id)}
@@ -954,7 +919,7 @@ export default function App() {
                                 </td>
                               </tr>
 
-                              {/* LISTA DE TRABAJADORES AUTORIZADOS DEBAJO DE LA EMPRESA */}
+                              {/* LISTA DE TRABAJADORES AUTORIZADOS */}
                               {(rec.workers || []).length > 0 && (
                                 <tr className="bg-slate-50/60 border-b border-slate-200/80">
                                   <td colSpan="6" className="px-4 py-3 pl-8">
@@ -975,7 +940,6 @@ export default function App() {
                                             </div>
 
                                             <div className="flex items-center space-x-1.5 shrink-0">
-                                              {/* Botón OK individual para cada trabajador */}
                                               <button 
                                                 onClick={() => handleToggleWorkerApproval(rec.id, worker.id)}
                                                 className={`px-2 py-0.5 rounded border text-[10px] font-bold flex items-center gap-1 transition ${
@@ -988,7 +952,6 @@ export default function App() {
                                                 <span>{worker.approved ? 'OK' : 'No'}</span>
                                               </button>
 
-                                              {/* Eliminar trabajador */}
                                               <button 
                                                 onClick={() => handleDeleteWorker(rec.id, worker.id)}
                                                 className="p-1 text-slate-400 hover:text-rose-600 rounded transition"
@@ -1020,7 +983,7 @@ export default function App() {
             <div className="space-y-6">
               <div>
                 <h2 className="text-xl font-bold text-slate-800">Documentación General de PRL</h2>
-                <p className="text-sm text-slate-500">Procedimientos, normas, protocolos y plantillas comunes a todos los centros.</p>
+                <p className="text-sm text-slate-500">Procedimientos, normas y plantillas comunes.</p>
               </div>
 
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1066,17 +1029,7 @@ export default function App() {
             <div className="bg-white p-8 rounded-xl border border-slate-200 shadow-sm space-y-6">
               <div>
                 <h2 className="text-xl font-bold text-slate-800">Carga Masiva de Centros y Usuarios</h2>
-                <p className="text-sm text-slate-500">Sube tu hoja de cálculo (.xlsx) para actualizar los centros y accesos.</p>
-              </div>
-
-              <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-2 text-xs text-slate-600">
-                <p className="font-bold text-slate-800">Estructura del Excel:</p>
-                <ul className="list-disc pl-4 space-y-1">
-                  <li><strong>Columna A:</strong> Nombre del Centro</li>
-                  <li><strong>Columna B:</strong> Zona</li>
-                  <li><strong>Columnas C, E, G, I, K:</strong> Usuario / Correo</li>
-                  <li><strong>Columnas D, F, H, J, L:</strong> Contraseña del usuario</li>
-                </ul>
+                <p className="text-sm text-slate-500">Sube tu hoja de cálculo (.xlsx) para actualizar centros y accesos.</p>
               </div>
 
               <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center hover:border-blue-500 transition cursor-pointer bg-slate-50">
@@ -1100,7 +1053,7 @@ export default function App() {
             <div className="space-y-6">
               <div>
                 <h2 className="text-xl font-bold text-slate-800">Usuarios y Roles Registrados</h2>
-                <p className="text-sm text-slate-500">Listado de credenciales, roles e identificación de usuarios.</p>
+                <p className="text-sm text-slate-500">Listado de credenciales y perfiles.</p>
               </div>
 
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1139,7 +1092,7 @@ export default function App() {
         </main>
       </div>
 
-      {/* Modal SharePoint */}
+      {/* MODAL SHAREPOINT */}
       {editDocModal.open && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 space-y-6 max-h-[90vh] flex flex-col">
@@ -1160,7 +1113,7 @@ export default function App() {
               <span className="text-xs font-bold text-slate-700 uppercase block">Añadir nuevo enlace</span>
               
               <div>
-                <label className="block text-xs text-slate-500 mb-1">URL / Enlace de SharePoint</label>
+                <label className="block text-xs text-slate-500 mb-1">URL de SharePoint</label>
                 <div className="relative">
                   <LinkIcon className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
                   <input 
@@ -1175,7 +1128,7 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Nombre del Archivo (Autodetectado o personalizado)</label>
+                <label className="block text-xs text-slate-500 mb-1">Nombre del Archivo</label>
                 <input 
                   type="text" 
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1206,7 +1159,7 @@ export default function App() {
                 if (docList.length === 0) {
                   return (
                     <p className="text-xs text-slate-400 text-center py-4 italic border border-dashed rounded-lg">
-                      No hay enlaces guardados en esta categoría.
+                      No hay enlaces guardados.
                     </p>
                   );
                 }
@@ -1226,7 +1179,6 @@ export default function App() {
                     <button 
                       onClick={() => handleDeleteLink(doc.id)}
                       className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition shrink-0"
-                      title="Eliminar enlace"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
