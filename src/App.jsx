@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Building2, 
   FileText, 
@@ -66,14 +66,29 @@ const extractFileNameFromUrl = (url) => {
 };
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(() => {
+    const saved = localStorage.getItem('neural_current_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+
   const [loginEmail, setLoginEmail] = useState('');
   const [loginCode, setLoginCode] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  const [users, setUsers] = useState(INITIAL_USERS);
-  const [enterprises, setEnterprises] = useState(INITIAL_ENTERPRISES);
-  const [generalDocs, setGeneralDocs] = useState(INITIAL_GENERAL_DOCS);
+  const [users, setUsers] = useState(() => {
+    const saved = localStorage.getItem('neural_users');
+    return saved ? JSON.parse(saved) : INITIAL_USERS;
+  });
+
+  const [enterprises, setEnterprises] = useState(() => {
+    const saved = localStorage.getItem('neural_enterprises');
+    return saved ? JSON.parse(saved) : INITIAL_ENTERPRISES;
+  });
+
+  const [generalDocs, setGeneralDocs] = useState(() => {
+    const saved = localStorage.getItem('neural_general_docs');
+    return saved ? JSON.parse(saved) : INITIAL_GENERAL_DOCS;
+  });
 
   const [activeTab, setActiveTab] = useState('enterprises');
   const [searchTerm, setSearchTerm] = useState('');
@@ -88,6 +103,23 @@ export default function App() {
   const [newLinkUrl, setNewLinkUrl] = useState('');
   const [newLinkName, setNewLinkName] = useState('');
 
+  // Guardar automáticamente en localStorage cada vez que cambien los datos
+  useEffect(() => {
+    localStorage.setItem('neural_enterprises', JSON.stringify(enterprises));
+  }, [enterprises]);
+
+  useEffect(() => {
+    localStorage.setItem('neural_users', JSON.stringify(users));
+  }, [users]);
+
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem('neural_current_user', JSON.stringify(currentUser));
+    } else {
+      localStorage.removeItem('neural_current_user');
+    }
+  }, [currentUser]);
+
   const handleLogin = (e) => {
     e.preventDefault();
     setLoginError('');
@@ -100,6 +132,7 @@ export default function App() {
 
   const handleLogout = () => {
     setCurrentUser(null);
+    localStorage.removeItem('neural_current_user');
     setLoginEmail('');
     setLoginCode('');
   };
@@ -110,7 +143,7 @@ export default function App() {
     return enterprises.filter(ent => ent.users.includes(currentUser.email));
   }, [currentUser, enterprises]);
 
-  // Función corregida para agrupar correctamente por EMPRESA
+  // Lector de Excel ultra robusto para detectar columnas y agrupar perfectamente
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -127,10 +160,19 @@ export default function App() {
         const enterpriseMap = {};
 
         data.forEach((row, index) => {
-          const empresaName = (row['EMPRESA'] || row['Empresa'] || row['empresa'] || 'Sin Empresa Asignada').toString().trim();
-          const centroName = (row['Centro trabajo'] || row['Centro Trabajo'] || row['centro trabajo'] || row['Title'] || `Centro ${index + 1}`).toString().trim();
+          // Buscar claves de forma flexible (ignorando mayúsculas, minúsculas y espacios)
+          const keys = Object.keys(row);
+          const empresaKey = keys.find(k => k.trim().toUpperCase() === 'EMPRESA');
+          const centroKey = keys.find(k => {
+            const clean = k.trim().toLowerCase();
+            return clean === 'centro trabajo' || clean === 'centro_trabajo' || clean === 'centro trabajo ' || clean === 'title';
+          });
 
-          // Si la empresa aún no existe en el mapa, la creamos
+          const empresaName = empresaKey ? row[empresaKey]?.toString().trim() : 'Sin Empresa Asignada';
+          const centroName = centroKey ? row[centroKey]?.toString().trim() : `Centro ${index + 1}`;
+
+          if (!empresaName) return;
+
           if (!enterpriseMap[empresaName]) {
             enterpriseMap[empresaName] = {
               id: `ent_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -141,7 +183,6 @@ export default function App() {
             };
           }
 
-          // Añadimos el centro de trabajo a la lista de centros de esta empresa
           enterpriseMap[empresaName].centres.push({
             id: `c_${Date.now()}_${index}`,
             name: centroName,
@@ -152,9 +193,9 @@ export default function App() {
         const newEnterprisesList = Object.values(enterpriseMap);
         if (newEnterprisesList.length > 0) {
           setEnterprises(newEnterprisesList);
-          alert(`¡Importación exitosa! Se han agrupado ${newEnterprisesList.length} empresas con sus respectivos centros de trabajo.`);
+          alert(`¡Importación exitosa! Se han agrupado ${newEnterprisesList.length} empresas correctamente.`);
         } else {
-          alert('No se han encontrado filas válidas en el archivo.');
+          alert('No se han encontrado columnas válidas de EMPRESA o Centro trabajo en el archivo.');
         }
       } catch (err) {
         console.error(err);
