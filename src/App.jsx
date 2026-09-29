@@ -110,7 +110,7 @@ export default function App() {
     return enterprises.filter(ent => ent.users.includes(currentUser.email));
   }, [currentUser, enterprises]);
 
-  // Función para procesar el Excel exportado de la lista de SharePoint CENTROS NEURAL
+  // Función corregida para agrupar correctamente por EMPRESA
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -127,12 +127,13 @@ export default function App() {
         const enterpriseMap = {};
 
         data.forEach((row, index) => {
-          const empresaName = row['EMPRESA'] || row['Empresa'] || row['empresa'] || 'Sin Empresa Asignada';
-          const centroName = row['Centro trabajo'] || row['Centro Trabajo'] || row['centro trabajo'] || row['Title'] || `Centro ${index + 1}`;
+          const empresaName = (row['EMPRESA'] || row['Empresa'] || row['empresa'] || 'Sin Empresa Asignada').toString().trim();
+          const centroName = (row['Centro trabajo'] || row['Centro Trabajo'] || row['centro trabajo'] || row['Title'] || `Centro ${index + 1}`).toString().trim();
 
+          // Si la empresa aún no existe en el mapa, la creamos
           if (!enterpriseMap[empresaName]) {
             enterpriseMap[empresaName] = {
-              id: `ent_imported_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+              id: `ent_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
               name: empresaName,
               zone: 'General',
               users: ['neuralprl'],
@@ -140,8 +141,9 @@ export default function App() {
             };
           }
 
+          // Añadimos el centro de trabajo a la lista de centros de esta empresa
           enterpriseMap[empresaName].centres.push({
-            id: `c_imported_${Date.now()}_${index}`,
+            id: `c_${Date.now()}_${index}`,
             name: centroName,
             docs: { er: [], ir: [], pap: [], epis: [], me: [] }
           });
@@ -150,9 +152,9 @@ export default function App() {
         const newEnterprisesList = Object.values(enterpriseMap);
         if (newEnterprisesList.length > 0) {
           setEnterprises(newEnterprisesList);
-          alert(`¡Importación exitosa! Se han cargado ${newEnterprisesList.length} empresas y sus centros.`);
+          alert(`¡Importación exitosa! Se han agrupado ${newEnterprisesList.length} empresas con sus respectivos centros de trabajo.`);
         } else {
-          alert('No se han encontrado columnas válidas de EMPRESA o Centro trabajo en el archivo.');
+          alert('No se han encontrado filas válidas en el archivo.');
         }
       } catch (err) {
         console.error(err);
@@ -303,7 +305,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center space-x-4">
-            {/* Botón destacado para importar el Excel de SharePoint */}
             <label className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition shadow-lg border border-blue-500">
               <Upload className="w-4 h-4" />
               <span>Importar Excel CENTROS NEURAL</span>
