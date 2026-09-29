@@ -2,30 +2,25 @@ import React, { useState, useMemo } from 'react';
 import { 
   Building2, 
   FileText, 
-  Upload, 
   Users, 
-  ShieldAlert, 
   AlertTriangle, 
   CheckCircle2, 
   XCircle, 
   Search, 
   ExternalLink, 
   LogOut, 
-  UserPlus, 
   Plus, 
-  Download,
   FolderOpen,
-  Lock,
   ChevronRight,
   ShieldCheck,
   FileSpreadsheet,
-  KeyRound,
   Trash2,
-  Link as LinkIcon
+  Link as LinkIcon,
+  ChevronDown
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
-// Único superadministrador inicial
+// Superadministrador inicial
 const INITIAL_USERS = [
   { id: '1', email: 'neuralprl', code: 'Neuralprl@', name: 'Superadministrador', role: 'superadmin', assignedCentres: ['ALL'] }
 ];
@@ -33,49 +28,74 @@ const INITIAL_USERS = [
 const INITIAL_GENERAL_DOCS = [
   { id: 'gd1', title: 'Procedimiento General de Evacuación v2', category: 'Procedimientos', link: 'https://sharepoint.com/doc1', date: '2026-01-15' },
   { id: 'gd2', title: 'Protocolo de Actuación Accidentes Laborales', category: 'Protocolos', link: 'https://sharepoint.com/doc2', date: '2026-02-01' },
-  { id: 'gd3', title: 'Plantilla de Inspección de Equipos de Protección', category: 'Plantillas', link: 'https://sharepoint.com/doc3', date: '2026-02-10' },
 ];
 
-const INITIAL_CENTRES = [
+// Estructura actualizada con Grupos (EMPRESA) y Centros con las 5 categorías exactas
+const INITIAL_ENTERPRISES = [
   {
-    id: 'c1',
-    name: 'Centro Neural Madrid - Castellana',
-    zone: 'Madrid Norte',
+    id: 'ent_1',
+    name: 'Neural Prevención S.L.',
+    zone: 'Nacional',
     users: ['neuralprl'],
-    docs: {
-      evaluacion_riesgos: [
-        { id: 'd1', name: 'Evaluacion_Riesgos_2026_Madrid.pdf', link: 'https://sharepoint.com/eval-madrid.pdf' }
-      ],
-      informacion_riesgos: [
-        { id: 'd2', name: 'Info_Riesgos_Puestos_Madrid.pdf', link: 'https://sharepoint.com/info-madrid.pdf' }
-      ],
-      medidas_emergencia: []
-    }
+    centres: [
+      {
+        id: 'c1',
+        name: 'Centro Neural Madrid - Castellana',
+        docs: {
+          er: [{ id: 'd1', name: 'Evaluacion_Riesgos_Madrid.pdf', link: 'https://sharepoint.com/eval-madrid.pdf' }],
+          ir: [{ id: 'd2', name: 'Info_Riesgos_Madrid.pdf', link: 'https://sharepoint.com/info-madrid.pdf' }],
+          pap: [],
+          epis: [],
+          me: []
+        }
+      },
+      {
+        id: 'c2',
+        name: 'Centro Neural Barcelona - Diagonal',
+        docs: {
+          er: [],
+          ir: [],
+          pap: [],
+          epis: [],
+          me: []
+        }
+      }
+    ]
   },
   {
-    id: 'c2',
-    name: 'Centro Neural Valencia - Mestalla',
-    zone: 'Comunidad Valenciana',
+    id: 'ent_2',
+    name: 'Grupo Hospitalario Neural',
+    zone: 'Levante',
     users: ['neuralprl'],
-    docs: {
-      evaluacion_riesgos: [
-        { id: 'd3', name: 'Evaluacion_Riesgos_Mestalla_v1.pdf', link: 'https://sharepoint.com/eval-valencia.pdf' }
-      ],
-      informacion_riesgos: [],
-      medidas_emergencia: [
-        { id: 'd4', name: 'Plan_Emergencia_Valencia_2026.pdf', link: 'https://sharepoint.com/emerg-valencia.pdf' }
-      ]
-    }
+    centres: [
+      {
+        id: 'c3',
+        name: 'Centro Neural Valencia - Mestalla',
+        docs: {
+          er: [{ id: 'd3', name: 'Evaluacion_Mestalla.pdf', link: 'https://sharepoint.com/eval-valencia.pdf' }],
+          ir: [],
+          pap: [],
+          epis: [],
+          me: [{ id: 'd4', name: 'Plan_Emergencia_Valencia.pdf', link: 'https://sharepoint.com/emerg-valencia.pdf' }]
+        }
+      }
+    ]
   }
 ];
 
-// Función para extraer o limpiar el nombre del archivo desde una URL de SharePoint
+const DOC_CATEGORIES = [
+  { key: 'er', label: 'ER', fullName: 'Evaluación de Riesgos' },
+  { key: 'ir', label: 'IR', fullName: 'Información de Riesgos' },
+  { key: 'pap', label: 'PAP', fullName: 'Planificación Actividad Preventiva' },
+  { key: 'epis', label: 'EPIs', fullName: 'Equipos de Protección Individual' },
+  { key: 'me', label: 'ME', fullName: 'Medidas de Emergencia' }
+];
+
 const extractFileNameFromUrl = (url) => {
   if (!url) return '';
   try {
     const parsed = new URL(url);
-    const pathname = parsed.pathname;
-    const filename = pathname.split('/').pop();
+    const filename = parsed.pathname.split('/').pop();
     if (filename && filename.length > 0) {
       return decodeURIComponent(filename);
     }
@@ -88,34 +108,33 @@ const extractFileNameFromUrl = (url) => {
 };
 
 export default function App() {
-  // Autenticación
   const [currentUser, setCurrentUser] = useState(null);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginCode, setLoginCode] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  // Estado global
   const [users, setUsers] = useState(INITIAL_USERS);
-  const [centres, setCentres] = useState(INITIAL_CENTRES);
+  const [enterprises, setEnterprises] = useState(INITIAL_ENTERPRISES);
   const [generalDocs, setGeneralDocs] = useState(INITIAL_GENERAL_DOCS);
 
-  // Navegación
-  const [activeTab, setActiveTab] = useState('centres');
-  const [selectedCentre, setSelectedCentre] = useState(null);
+  const [activeTab, setActiveTab] = useState('enterprises');
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Modal para gestionar múltiples enlaces de SharePoint
-  const [editDocModal, setEditDocModal] = useState({ open: false, centreId: null, categoryKey: null, categoryLabel: '' });
+  const [editDocModal, setEditDocModal] = useState({ 
+    open: false, 
+    enterpriseId: null, 
+    centreId: null, 
+    categoryKey: null, 
+    categoryLabel: '' 
+  });
   const [newLinkUrl, setNewLinkUrl] = useState('');
   const [newLinkName, setNewLinkName] = useState('');
 
-  // Manejo de Login
   const handleLogin = (e) => {
     e.preventDefault();
     setLoginError('');
     const user = users.find(
-      u => u.email.trim() === loginEmail.trim() && 
-           u.code.trim() === loginCode.trim()
+      u => u.email.trim() === loginEmail.trim() && u.code.trim() === loginCode.trim()
     );
 
     if (user) {
@@ -131,98 +150,12 @@ export default function App() {
     setLoginCode('');
   };
 
-  const accessibleCentres = useMemo(() => {
+  const accessibleEnterprises = useMemo(() => {
     if (!currentUser) return [];
-    if (currentUser.role === 'superadmin') return centres;
-    return centres.filter(c => c.users.includes(currentUser.email));
-  }, [currentUser, centres]);
+    if (currentUser.role === 'superadmin') return enterprises;
+    return enterprises.filter(ent => ent.users.includes(currentUser.email));
+  }, [currentUser, enterprises]);
 
-  // Actualiza el centro seleccionado si cambian los datos globales
-  const currentSelectedCentre = useMemo(() => {
-    if (!selectedCentre) return null;
-    return centres.find(c => c.id === selectedCentre.id) || selectedCentre;
-  }, [centres, selectedCentre]);
-
-  // Carga Masiva Excel
-  const handleFileUploadCentres = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const bstr = evt.target.result;
-      const wb = XLSX.read(bstr, { type: 'binary' });
-      const wsname = wb.SheetNames[0];
-      const ws = wb.Sheets[wsname];
-      const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
-
-      const rows = data.slice(1);
-      const newCentres = [...centres];
-      const newUsers = [...users];
-
-      rows.forEach((row, idx) => {
-        if (!row[0]) return;
-
-        const centreName = row[0].toString().trim();
-        const zone = row[1] ? row[1].toString().trim() : 'General';
-        const assignedUserEmails = [];
-
-        const userCols = [
-          { emailIdx: 2, codeIdx: 3 },
-          { emailIdx: 4, codeIdx: 5 },
-          { emailIdx: 6, codeIdx: 7 },
-          { emailIdx: 8, codeIdx: 9 },
-          { emailIdx: 10, codeIdx: 11 }
-        ];
-
-        userCols.forEach(({ emailIdx, codeIdx }) => {
-          if (row[emailIdx] && row[codeIdx]) {
-            const email = row[emailIdx].toString().trim();
-            const code = row[codeIdx].toString().trim();
-            assignedUserEmails.push(email);
-
-            const exists = newUsers.some(u => u.email.toLowerCase() === email.toLowerCase());
-            if (!exists) {
-              newUsers.push({
-                id: `u_${Date.now()}_${Math.random()}`,
-                email: email,
-                code: code,
-                name: email.includes('@') ? email.split('@')[0] : email,
-                role: 'gestor',
-                assignedCentres: []
-              });
-            }
-          }
-        });
-
-        const existingIndex = newCentres.findIndex(c => c.name.toLowerCase() === centreName.toLowerCase());
-        const centreObj = {
-          id: existingIndex >= 0 ? newCentres[existingIndex].id : `c_${Date.now()}_${idx}`,
-          name: centreName,
-          zone: zone,
-          users: assignedUserEmails,
-          docs: existingIndex >= 0 ? newCentres[existingIndex].docs : {
-            evaluacion_riesgos: [],
-            informacion_riesgos: [],
-            medidas_emergencia: []
-          }
-        };
-
-        if (existingIndex >= 0) {
-          newCentres[existingIndex] = centreObj;
-        } else {
-          newCentres.push(centreObj);
-        }
-      });
-
-      setCentres(newCentres);
-      setUsers(newUsers);
-      alert('¡Centros y usuarios importados correctamente!');
-    };
-    reader.readAsBinaryString(file);
-  };
-
-  // Autocompletar el nombre del archivo al pegar la URL
   const handleUrlChange = (url) => {
     setNewLinkUrl(url);
     if (url.trim() && !newLinkName) {
@@ -230,10 +163,9 @@ export default function App() {
     }
   };
 
-  // Añadir un enlace de SharePoint a la categoría actual
   const handleAddLink = (e) => {
     e.preventDefault();
-    if (!newLinkUrl.trim() || !editDocModal.centreId || !editDocModal.categoryKey) return;
+    if (!newLinkUrl.trim() || !editDocModal.enterpriseId || !editDocModal.centreId || !editDocModal.categoryKey) return;
 
     const fileName = newLinkName.trim() || extractFileNameFromUrl(newLinkUrl);
     const newDocObj = {
@@ -242,42 +174,57 @@ export default function App() {
       link: newLinkUrl.trim()
     };
 
-    setCentres(prevCentres => prevCentres.map(c => {
-      if (c.id === editDocModal.centreId) {
-        const currentList = Array.isArray(c.docs[editDocModal.categoryKey]) 
-          ? c.docs[editDocModal.categoryKey] 
-          : [];
+    setEnterprises(prevEnts => prevEnts.map(ent => {
+      if (ent.id === editDocModal.enterpriseId) {
         return {
-          ...c,
-          docs: {
-            ...c.docs,
-            [editDocModal.categoryKey]: [...currentList, newDocObj]
-          }
+          ...ent,
+          centres: ent.centres.map(centre => {
+            if (centre.id === editDocModal.centreId) {
+              const currentList = Array.isArray(centre.docs[editDocModal.categoryKey]) 
+                ? centre.docs[editDocModal.categoryKey] 
+                : [];
+              return {
+                ...centre,
+                docs: {
+                  ...centre.docs,
+                  [editDocModal.categoryKey]: [...currentList, newDocObj]
+                }
+              };
+            }
+            return centre;
+          })
         };
       }
-      return c;
+      return ent;
     }));
 
     setNewLinkUrl('');
     setNewLinkName('');
   };
 
-  // Eliminar un enlace individual de una categoría
   const handleDeleteLink = (docId) => {
-    setCentres(prevCentres => prevCentres.map(c => {
-      if (c.id === editDocModal.centreId) {
-        const currentList = Array.isArray(c.docs[editDocModal.categoryKey]) 
-          ? c.docs[editDocModal.categoryKey] 
-          : [];
+    setEnterprises(prevEnts => prevEnts.map(ent => {
+      if (ent.id === editDocModal.enterpriseId) {
         return {
-          ...c,
-          docs: {
-            ...c.docs,
-            [editDocModal.categoryKey]: currentList.filter(d => d.id !== docId)
-          }
+          ...ent,
+          centres: ent.centres.map(centre => {
+            if (centre.id === editDocModal.centreId) {
+              const currentList = Array.isArray(centre.docs[editDocModal.categoryKey]) 
+                ? centre.docs[editDocModal.categoryKey] 
+                : [];
+              return {
+                ...centre,
+                docs: {
+                  ...centre.docs,
+                  [editDocModal.categoryKey]: currentList.filter(d => d.id !== docId)
+                }
+              };
+            }
+            return centre;
+          })
         };
       }
-      return c;
+      return ent;
     }));
   };
 
@@ -374,11 +321,11 @@ export default function App() {
       <nav className="bg-white border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 flex space-x-8">
           <button 
-            onClick={() => { setActiveTab('centres'); setSelectedCentre(null); }}
-            className={`py-4 px-2 font-medium text-sm border-b-2 flex items-center space-x-2 ${activeTab === 'centres' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+            onClick={() => setActiveTab('enterprises')}
+            className={`py-4 px-2 font-medium text-sm border-b-2 flex items-center space-x-2 ${activeTab === 'enterprises' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
           >
             <Building2 className="w-4 h-4" />
-            <span>Mis Centros de Trabajo</span>
+            <span>Empresas y Centros de Trabajo</span>
           </button>
 
           <button 
@@ -390,41 +337,31 @@ export default function App() {
           </button>
 
           {currentUser.role === 'superadmin' && (
-            <>
-              <button 
-                onClick={() => setActiveTab('excel')}
-                className={`py-4 px-2 font-medium text-sm border-b-2 flex items-center space-x-2 ${activeTab === 'excel' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-              >
-                <FileSpreadsheet className="w-4 h-4" />
-                <span>Carga Masiva (Excel)</span>
-              </button>
-
-              <button 
-                onClick={() => setActiveTab('users')}
-                className={`py-4 px-2 font-medium text-sm border-b-2 flex items-center space-x-2 ${activeTab === 'users' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-              >
-                <Users className="w-4 h-4" />
-                <span>Gestión de Perfiles</span>
-              </button>
-            </>
+            <button 
+              onClick={() => setActiveTab('users')}
+              className={`py-4 px-2 font-medium text-sm border-b-2 flex items-center space-x-2 ${activeTab === 'users' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+            >
+              <Users className="w-4 h-4" />
+              <span>Gestión de Perfiles</span>
+            </button>
           )}
         </div>
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 py-8 flex-1 w-full">
-        {activeTab === 'centres' && !currentSelectedCentre && (
-          <div className="space-y-6">
+        {activeTab === 'enterprises' && (
+          <div className="space-y-8">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
-                <h2 className="text-xl font-bold text-slate-800">Centros Asignados</h2>
-                <p className="text-sm text-slate-500">Selecciona un centro para revisar o enlazar la documentación.</p>
+                <h2 className="text-xl font-bold text-slate-800">Listado por Empresa y Centros</h2>
+                <p className="text-sm text-slate-500">Visualización vertical de centros con estado documental (ER, IR, PAP, EPIs, ME).</p>
               </div>
 
               <div className="relative w-full sm:w-64">
                 <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
                 <input 
                   type="text"
-                  placeholder="Buscar centro..."
+                  placeholder="Buscar centro o empresa..."
                   className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -432,157 +369,121 @@ export default function App() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {accessibleCentres
-                .filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()))
-                .map((centre) => {
-                  const categoriesKeys = ['evaluacion_riesgos', 'informacion_riesgos', 'medidas_emergencia'];
-                  const pendingCount = categoriesKeys.filter(k => {
-                    const list = Array.isArray(centre.docs[k]) ? centre.docs[k] : [];
-                    return list.length === 0;
-                  }).length;
+            <div className="space-y-6">
+              {accessibleEnterprises.map((ent) => {
+                const filteredCentres = ent.centres.filter(c => 
+                  c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                  ent.name.toLowerCase().includes(searchTerm.toLowerCase())
+                );
 
-                  return (
-                    <div 
-                      key={centre.id}
-                      onClick={() => setSelectedCentre(centre)}
-                      className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition cursor-pointer flex flex-col justify-between"
-                    >
-                      <div className="space-y-3">
-                        <div className="flex justify-between items-start">
-                          <span className="text-xs font-semibold px-2.5 py-1 bg-slate-100 text-slate-600 rounded">
-                            {centre.zone}
-                          </span>
-                          {pendingCount === 0 ? (
-                            <span className="text-xs font-semibold px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-full flex items-center gap-1">
-                              <CheckCircle2 className="w-3 h-3" /> Completo
-                            </span>
-                          ) : (
-                            <span className="text-xs font-semibold px-2.5 py-1 bg-amber-100 text-amber-700 rounded-full flex items-center gap-1">
-                              <AlertTriangle className="w-3 h-3" /> {pendingCount} Categ. sin docs
-                            </span>
-                          )}
-                        </div>
-
-                        <h3 className="text-lg font-bold text-slate-800">
-                          {centre.name}
-                        </h3>
-                      </div>
-
-                      <div className="mt-6 pt-4 border-t border-slate-100 flex justify-between items-center text-sm font-medium text-blue-600">
-                        <span>Ver documentación</span>
-                        <ChevronRight className="w-4 h-4" />
-                      </div>
-                    </div>
-                  );
-                })}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'centres' && currentSelectedCentre && (
-          <div className="space-y-6">
-            <button 
-              onClick={() => setSelectedCentre(null)}
-              className="text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center gap-1"
-            >
-              ← Volver a centros
-            </button>
-
-            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-2">
-              <span className="text-xs font-semibold px-2.5 py-1 bg-slate-100 text-slate-600 rounded">
-                {currentSelectedCentre.zone}
-              </span>
-              <h2 className="text-2xl font-bold text-slate-800">{currentSelectedCentre.name}</h2>
-              <p className="text-xs text-slate-400">
-                Usuarios con acceso: {currentSelectedCentre.users.join(', ')}
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {[
-                { key: 'evaluacion_riesgos', label: 'Evaluación de Riesgos' },
-                { key: 'informacion_riesgos', label: 'Información de Riesgos' },
-                { key: 'medidas_emergencia', label: 'Medidas de Emergencia' }
-              ].map(({ key, label }) => {
-                const docList = Array.isArray(currentSelectedCentre.docs[key]) ? currentSelectedCentre.docs[key] : [];
-                const isPresent = docList.length > 0;
+                if (filteredCentres.length === 0 && searchTerm) return null;
 
                 return (
-                  <div key={key} className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between space-y-4">
-                    <div>
-                      <div className="flex justify-between items-center mb-3">
-                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Categoría</span>
-                        {isPresent ? (
-                          <span className="text-xs font-bold px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-full flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3" /> {docList.length} Archivo(s)
-                          </span>
-                        ) : (
-                          <span className="text-xs font-bold px-2.5 py-1 bg-rose-100 text-rose-700 rounded-full flex items-center gap-1">
-                            <XCircle className="w-3 h-3" /> Pendiente
-                          </span>
-                        )}
+                  <div key={ent.id} className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                    <div className="bg-slate-800 text-white px-6 py-4 flex justify-between items-center">
+                      <div className="flex items-center space-x-3">
+                        <Building2 className="w-5 h-5 text-blue-400" />
+                        <div>
+                          <h3 className="font-bold text-lg">{ent.name}</h3>
+                          <span className="text-xs text-slate-300">Zona: {ent.zone}</span>
+                        </div>
                       </div>
+                      <span className="text-xs bg-slate-700 px-3 py-1 rounded-full text-blue-200 font-medium">
+                        {ent.centres.length} Centros registrados
+                      </span>
+                    </div>
 
-                      <h3 className="text-base font-bold text-slate-800 mb-3">{label}</h3>
+                    <div className="divide-y divide-slate-100 p-6 space-y-6">
+                      {filteredCentres.map((centre) => (
+                        <div key={centre.id} className="pt-6 first:pt-0 space-y-4">
+                          <div className="flex justify-between items-center">
+                            <h4 className="font-bold text-slate-800 text-base flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                              {centre.name}
+                            </h4>
+                          </div>
 
-                      {isPresent ? (
-                        <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                          {docList.map(doc => (
-                            <a 
-                              key={doc.id}
-                              href={doc.link} 
-                              target="_blank" 
-                              rel="noreferrer"
-                              className="p-2.5 bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 rounded-lg flex items-center justify-between text-xs transition group"
-                            >
-                              <div className="flex items-center space-x-2 truncate pr-2">
-                                <FileText className="w-4 h-4 text-blue-600 shrink-0" />
-                                <span className="font-medium text-slate-700 group-hover:text-blue-700 truncate">{doc.name}</span>
-                              </div>
-                              <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 shrink-0" />
-                            </a>
-                          ))}
-                      </div>
-                      ) : (
-                        <p className="text-xs text-rose-500 italic bg-rose-50 p-3 rounded border border-rose-100">
-                          Sin documentos vinculados en esta categoría.
-                        </p>
-                      )}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                            {DOC_CATEGORIES.map(({ key, label, fullName }) => {
+                              const docList = Array.isArray(centre.docs[key]) ? centre.docs[key] : [];
+                              const isPresent = docList.length > 0;
+
+                              return (
+                                <div key={key} className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex flex-col justify-between space-y-3">
+                                  <div>
+                                    <div className="flex justify-between items-center mb-1">
+                                      <span className="font-black text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100" title={fullName}>
+                                        {label}
+                                      </span>
+                                      {isPresent ? (
+                                        <span className="text-[10px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-full flex items-center gap-0.5">
+                                          <CheckCircle2 className="w-3 h-3" /> {docList.length}
+                                        </span>
+                                      ) : (
+                                        <span className="text-[10px] font-bold px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded-full">
+                                          Pendiente
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {isPresent ? (
+                                      <div className="space-y-1 mt-2 max-h-24 overflow-y-auto">
+                                        {docList.map(doc => (
+                                          <a 
+                                            key={doc.id}
+                                            href={doc.link} 
+                                            target="_blank" 
+                                            rel="noreferrer"
+                                            className="text-[11px] text-slate-700 hover:text-blue-600 block truncate flex items-center gap-1 bg-white p-1 rounded border border-slate-100"
+                                            title={doc.name}
+                                          >
+                                            <FileText className="w-3 h-3 text-blue-500 shrink-0" />
+                                            <span className="truncate">{doc.name}</span>
+                                          </a>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <p className="text-[11px] text-slate-400 italic mt-1">Sin archivos</p>
+                                    )}
+                                  </div>
+
+                                  {currentUser.role === 'superadmin' && (
+                                    <button 
+                                      onClick={() => {
+                                        setEditDocModal({
+                                          open: true,
+                                          enterpriseId: ent.id,
+                                          centreId: centre.id,
+                                          categoryKey: key,
+                                          categoryLabel: `${centre.name} - ${fullName} (${label})`
+                                        });
+                                        setNewLinkUrl('');
+                                        setNewLinkName('');
+                                      }}
+                                      className="w-full py-1.5 bg-white border border-slate-200 text-slate-600 text-[11px] font-medium rounded hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition flex items-center justify-center gap-1"
+                                    >
+                                      <Plus className="w-3 h-3" /> Gestionar
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-
-                  <div className="space-y-2 pt-2 border-t border-slate-100">
-                    {currentUser.role === 'superadmin' && (
-                      <button 
-                        onClick={() => {
-                          setEditDocModal({
-                            open: true,
-                            centreId: currentSelectedCentre.id,
-                            categoryKey: key,
-                            categoryLabel: label
-                          });
-                          setNewLinkUrl('');
-                          setNewLinkName('');
-                        }}
-                        className="w-full py-2 px-3 bg-slate-100 text-slate-700 font-medium text-xs rounded-lg hover:bg-slate-200 transition flex items-center justify-center gap-1.5"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Gestionar / Añadir Enlaces</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
         )}
 
         {activeTab === 'general' && (
           <div className="space-y-6">
             <div>
               <h2 className="text-xl font-bold text-slate-800">Documentación General de PRL</h2>
-              <p className="text-sm text-slate-500">Procedimientos, normas, protocolos y plantillas comunes a todos los centros.</p>
+              <p className="text-sm text-slate-500">Procedimientos, normas y protocolos comunes a toda la organización.</p>
             </div>
 
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -623,51 +524,18 @@ export default function App() {
           </div>
         )}
 
-        {activeTab === 'excel' && currentUser.role === 'superadmin' && (
-          <div className="max-w-2xl mx-auto bg-white p-8 rounded-xl border border-slate-200 shadow-sm space-y-6">
-            <div>
-              <h2 className="text-xl font-bold text-slate-800">Carga Masiva de Centros y Usuarios</h2>
-              <p className="text-sm text-slate-500">Sube tu hoja de cálculo (.xlsx) para actualizar los centros y accesos.</p>
-            </div>
-
-            <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-2 text-xs text-slate-600">
-              <p className="font-bold text-slate-800">Estructura del Excel:</p>
-              <ul className="list-disc pl-4 space-y-1">
-                <li><strong>Columna A:</strong> Nombre del Centro</li>
-                <li><strong>Columna B:</strong> Zona</li>
-                <li><strong>Columnas C, E, G, I, K:</strong> Usuario / Correo</li>
-                <li><strong>Columnas D, F, H, J, L:</strong> Contraseña del usuario</li>
-              </ul>
-            </div>
-
-            <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center hover:border-blue-500 transition cursor-pointer bg-slate-50">
-              <input 
-                type="file" 
-                accept=".xlsx, .xls"
-                onChange={handleFileUploadCentres}
-                className="hidden" 
-                id="excel-upload" 
-              />
-              <label htmlFor="excel-upload" className="cursor-pointer space-y-2 block">
-                <FileSpreadsheet className="w-10 h-10 text-emerald-600 mx-auto" />
-                <span className="block text-sm font-medium text-slate-700">Seleccionar archivo Excel</span>
-              </label>
-            </div>
-          </div>
-        )}
-
         {activeTab === 'users' && currentUser.role === 'superadmin' && (
           <div className="space-y-6">
             <div>
               <h2 className="text-xl font-bold text-slate-800">Usuarios Registrados</h2>
-              <p className="text-sm text-slate-500">Listado de usuarios y contraseñas de acceso.</p>
+              <p className="text-sm text-slate-500">Listado de perfiles y credenciales.</p>
             </div>
 
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <table className="w-full text-left text-sm text-slate-600">
                 <thead className="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b">
                   <tr>
-                    <th className="px-6 py-3">Nombre / ID</th>
+                    <th className="px-6 py-3">Nombre</th>
                     <th className="px-6 py-3">Usuario</th>
                     <th className="px-6 py-3">Contraseña</th>
                     <th className="px-6 py-3">Rol</th>
@@ -686,14 +554,13 @@ export default function App() {
                       </td>
                     </tr>
                   ))}
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
         )}
       </main>
 
-      {/* Modal para Múltiples Enlaces de SharePoint por Categoría */}
       {editDocModal.open && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 space-y-6 max-h-[90vh] flex flex-col">
@@ -703,14 +570,13 @@ export default function App() {
                 <p className="text-xs text-slate-500">{editDocModal.categoryLabel}</p>
               </div>
               <button 
-                onClick={() => setEditDocModal({ open: false, centreId: null, categoryKey: null, categoryLabel: '' })}
+                onClick={() => setEditDocModal({ open: false, enterpriseId: null, centreId: null, categoryKey: null, categoryLabel: '' })}
                 className="text-slate-400 hover:text-slate-600 text-xl font-bold"
               >
                 &times;
               </button>
             </div>
 
-            {/* Formulario para agregar un nuevo enlace */}
             <form onSubmit={handleAddLink} className="space-y-3 bg-slate-50 p-4 rounded-lg border border-slate-200">
               <span className="text-xs font-bold text-slate-700 uppercase block">Añadir nuevo enlace</span>
               
@@ -734,7 +600,7 @@ export default function App() {
                 <input 
                   type="text" 
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Ej. Evaluacion_Mestalla_2026.pdf"
+                  placeholder="Ej. Planificacion_Preventiva.pdf"
                   value={newLinkName}
                   onChange={(e) => setNewLinkName(e.target.value)}
                 />
@@ -749,11 +615,11 @@ export default function App() {
               </button>
             </form>
 
-            {/* Listado de enlaces existentes para poder borrarlos */}
             <div className="flex-1 overflow-y-auto space-y-2">
-              <span className="text-xs font-bold text-slate-700 uppercase block">Enlaces actuales en esta categoría</span>
+              <span className="text-xs font-bold text-slate-700 uppercase block">Enlaces actuales</span>
               {(() => {
-                const targetCentre = centres.find(c => c.id === editDocModal.centreId);
+                const targetEnt = enterprises.find(e => e.id === editDocModal.enterpriseId);
+                const targetCentre = targetEnt?.centres.find(c => c.id === editDocModal.centreId);
                 const list = targetCentre && targetCentre.docs[editDocModal.categoryKey] ? targetCentre.docs[editDocModal.categoryKey] : [];
                 
                 if (list.length === 0) {
@@ -780,7 +646,7 @@ export default function App() {
 
             <div className="border-t pt-3 flex justify-end">
               <button
-                onClick={() => setEditDocModal({ open: false, centreId: null, categoryKey: null, categoryLabel: '' })}
+                onClick={() => setEditDocModal({ open: false, enterpriseId: null, centreId: null, categoryKey: null, categoryLabel: '' })}
                 className="px-4 py-2 bg-slate-200 text-slate-700 text-xs font-medium rounded-lg hover:bg-slate-300 transition"
               >
                 Cerrar
