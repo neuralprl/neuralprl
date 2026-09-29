@@ -14,12 +14,17 @@ import {
   FileSpreadsheet,
   Trash2,
   Link as LinkIcon,
-  Upload
+  Upload,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 const INITIAL_USERS = [
-  { id: '1', email: 'neuralprl', code: 'Neuralprl@', name: 'Superadministrador', role: 'superadmin', assignedCentres: ['ALL'] }
+  { id: '1', email: 'Julio', code: 'Julio@', name: 'Julio', role: 'superadmin', assignedCentres: ['ALL'] },
+  { id: '2', email: 'Mariel', code: 'Mariel@', name: 'Mariel', role: 'superadmin', assignedCentres: ['ALL'] },
+  { id: '3', email: 'neuralprl', code: 'Neuralprl@', name: 'Neuralprl', role: 'superadmin', assignedCentres: ['ALL'] },
+  { id: '4', email: 'Neuralprl', code: 'Neuralprl@', name: 'Neuralprl (Mayús)', role: 'superadmin', assignedCentres: ['ALL'] }
 ];
 
 const INITIAL_GENERAL_DOCS = [
@@ -32,7 +37,7 @@ const INITIAL_ENTERPRISES = [
     id: 'ent_1',
     name: 'Neural Prevención S.L.',
     zone: 'Nacional',
-    users: ['neuralprl'],
+    users: ['neuralprl', 'Julio', 'Mariel'],
     centres: [
       {
         id: 'c1',
@@ -92,6 +97,9 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState('enterprises');
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Estado para controlar qué empresas están desplegadas (por defecto todas abiertas o cerradas)
+  const [collapsedEnterprises, setCollapsedEnterprises] = useState({});
 
   const [editDocModal, setEditDocModal] = useState({ 
     open: false, 
@@ -103,7 +111,6 @@ export default function App() {
   const [newLinkUrl, setNewLinkUrl] = useState('');
   const [newLinkName, setNewLinkName] = useState('');
 
-  // Guardar automáticamente en localStorage cada vez que cambien los datos
   useEffect(() => {
     localStorage.setItem('neural_enterprises', JSON.stringify(enterprises));
   }, [enterprises]);
@@ -124,7 +131,7 @@ export default function App() {
     e.preventDefault();
     setLoginError('');
     const user = users.find(
-      u => u.email.trim() === loginEmail.trim() && u.code.trim() === loginCode.trim()
+      u => u.email.trim().toLowerCase() === loginEmail.trim().toLowerCase() && u.code.trim() === loginCode.trim()
     );
     if (user) setCurrentUser(user);
     else setLoginError('Usuario o contraseña incorrectos.');
@@ -143,7 +150,14 @@ export default function App() {
     return enterprises.filter(ent => ent.users.includes(currentUser.email));
   }, [currentUser, enterprises]);
 
-  // Lector de Excel ultra robusto para detectar columnas y agrupar perfectamente
+  const toggleEnterpriseCollapse = (entId) => {
+    setCollapsedEnterprises(prev => ({
+      ...prev,
+      [entId]: !prev[entId]
+    }));
+  };
+
+  // Lector de Excel robusto: agrupa empresas, centros y lee usuarios/contraseñas si existen en el Excel
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -158,18 +172,28 @@ export default function App() {
         const data = XLSX.utils.sheet_to_json(ws);
 
         const enterpriseMap = {};
+        const extractedUsersMap = { ...users.reduce((acc, u) => ({ ...acc, [u.email]: u }), {}) };
 
         data.forEach((row, index) => {
-          // Buscar claves de forma flexible (ignorando mayúsculas, minúsculas y espacios)
           const keys = Object.keys(row);
           const empresaKey = keys.find(k => k.trim().toUpperCase() === 'EMPRESA');
           const centroKey = keys.find(k => {
             const clean = k.trim().toLowerCase();
             return clean === 'centro trabajo' || clean === 'centro_trabajo' || clean === 'centro trabajo ' || clean === 'title';
           });
+          const mailKey = keys.find(k => {
+            const clean = k.trim().toLowerCase();
+            return clean === 'mail' || clean === 'email' || clean === 'correo';
+          });
+          const passKey = keys.find(k => {
+            const clean = k.trim().toLowerCase();
+            return clean === 'contraseña' || clean === 'contrasena' || clean === 'password' || clean === 'clave';
+          });
 
           const empresaName = empresaKey ? row[empresaKey]?.toString().trim() : 'Sin Empresa Asignada';
           const centroName = centroKey ? row[centroKey]?.toString().trim() : `Centro ${index + 1}`;
+          const userMail = mailKey ? row[mailKey]?.toString().trim() : '';
+          const userPass = passKey ? row[passKey]?.toString().trim() : '';
 
           if (!empresaName) return;
 
@@ -178,9 +202,26 @@ export default function App() {
               id: `ent_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
               name: empresaName,
               zone: 'General',
-              users: ['neuralprl'],
+              users: ['neuralprl', 'Julio', 'Mariel'],
               centres: []
             };
+          }
+
+          // Si el Excel tiene credenciales de usuario para este centro/empresa
+          if (userMail && userPass) {
+            if (!enterpriseMap[empresaName].users.includes(userMail)) {
+              enterpriseMap[empresaName].users.push(userMail);
+            }
+            if (!extractedUsersMap[userMail]) {
+              extractedUsersMap[userMail] = {
+                id: `u_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
+                email: userMail,
+                code: userPass,
+                name: userMail,
+                role: 'client',
+                assignedCentres: [empresaName]
+              };
+            }
           }
 
           enterpriseMap[empresaName].centres.push({
@@ -191,11 +232,14 @@ export default function App() {
         });
 
         const newEnterprisesList = Object.values(enterpriseMap);
+        const newUsersList = Object.values(extractedUsersMap);
+
         if (newEnterprisesList.length > 0) {
           setEnterprises(newEnterprisesList);
-          alert(`¡Importación exitosa! Se han agrupado ${newEnterprisesList.length} empresas correctamente.`);
+          setUsers(newUsersList);
+          alert(`¡Importación exitosa! Se han agrupado ${newEnterprisesList.length} empresas y actualizado los usuarios.`);
         } else {
-          alert('No se han encontrado columnas válidas de EMPRESA o Centro trabajo en el archivo.');
+          alert('No se han encontrado columnas válidas en el archivo.');
         }
       } catch (err) {
         console.error(err);
@@ -346,11 +390,13 @@ export default function App() {
           </div>
 
           <div className="flex items-center space-x-4">
-            <label className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition shadow-lg border border-blue-500">
-              <Upload className="w-4 h-4" />
-              <span>Importar Excel CENTROS NEURAL</span>
-              <input type="file" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} className="hidden" />
-            </label>
+            {currentUser.role === 'superadmin' && (
+              <label className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition shadow-lg border border-blue-500">
+                <Upload className="w-4 h-4" />
+                <span>Importar Excel CENTROS NEURAL</span>
+                <input type="file" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} className="hidden" />
+              </label>
+            )}
 
             <div className="text-right hidden sm:block border-l border-slate-700 pl-4">
               <p className="text-sm font-medium">{currentUser.name}</p>
@@ -386,16 +432,6 @@ export default function App() {
             <FolderOpen className="w-4 h-4" />
             <span>Documentación General</span>
           </button>
-
-          {currentUser.role === 'superadmin' && (
-            <button 
-              onClick={() => setActiveTab('users')}
-              className={`py-4 px-2 font-medium text-sm border-b-2 flex items-center space-x-2 ${activeTab === 'users' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-            >
-              <Users className="w-4 h-4" />
-              <span>Gestión de Perfiles</span>
-            </button>
-          )}
         </div>
       </nav>
 
@@ -429,9 +465,14 @@ export default function App() {
 
                 if (filteredCentres.length === 0 && searchTerm) return null;
 
+                const isCollapsed = collapsedEnterprises[ent.id];
+
                 return (
                   <div key={ent.id} className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-                    <div className="bg-slate-800 text-white px-6 py-4 flex justify-between items-center">
+                    <div 
+                      onClick={() => toggleEnterpriseCollapse(ent.id)}
+                      className="bg-slate-800 text-white px-6 py-4 flex justify-between items-center cursor-pointer hover:bg-slate-750 transition"
+                    >
                       <div className="flex items-center space-x-3">
                         <Building2 className="w-5 h-5 text-blue-400" />
                         <div>
@@ -439,90 +480,95 @@ export default function App() {
                           <span className="text-xs text-slate-300">Empresa / Grupo</span>
                         </div>
                       </div>
-                      <span className="text-xs bg-slate-700 px-3 py-1 rounded-full text-blue-200 font-medium">
-                        {ent.centres.length} Centros registrados
-                      </span>
+                      <div className="flex items-center space-x-3">
+                        <span className="text-xs bg-slate-700 px-3 py-1 rounded-full text-blue-200 font-medium">
+                          {ent.centres.length} Centros registrados
+                        </span>
+                        {isCollapsed ? <ChevronDown className="w-5 h-5 text-slate-300" /> : <ChevronUp className="w-5 h-5 text-slate-300" />}
+                      </div>
                     </div>
 
-                    <div className="divide-y divide-slate-100 p-6 space-y-6">
-                      {filteredCentres.map((centre) => (
-                        <div key={centre.id} className="pt-6 first:pt-0 space-y-4">
-                          <div className="flex justify-between items-center">
-                            <h4 className="font-bold text-slate-800 text-base flex items-center gap-2">
-                              <span className="w-2 h-2 rounded-full bg-blue-600"></span>
-                              {centre.name}
-                            </h4>
-                          </div>
+                    {!isCollapsed && (
+                      <div className="divide-y divide-slate-100 p-6 space-y-6">
+                        {filteredCentres.map((centre) => (
+                          <div key={centre.id} className="pt-6 first:pt-0 space-y-4">
+                            <div className="flex justify-between items-center">
+                              <h4 className="font-bold text-slate-800 text-base flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                                {centre.name}
+                              </h4>
+                            </div>
 
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                            {DOC_CATEGORIES.map(({ key, label, fullName }) => {
-                              const docList = Array.isArray(centre.docs[key]) ? centre.docs[key] : [];
-                              const isPresent = docList.length > 0;
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                              {DOC_CATEGORIES.map(({ key, label, fullName }) => {
+                                const docList = Array.isArray(centre.docs[key]) ? centre.docs[key] : [];
+                                const isPresent = docList.length > 0;
 
-                              return (
-                                <div key={key} className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex flex-col justify-between space-y-3">
-                                  <div>
-                                    <div className="flex justify-between items-center mb-1">
-                                      <span className="font-black text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100" title={fullName}>
-                                        {label}
-                                      </span>
+                                return (
+                                  <div key={key} className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex flex-col justify-between space-y-3">
+                                    <div>
+                                      <div className="flex justify-between items-center mb-1">
+                                        <span className="font-black text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100" title={fullName}>
+                                          {label}
+                                        </span>
+                                        {isPresent ? (
+                                          <span className="text-[10px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-full flex items-center gap-0.5">
+                                            <CheckCircle2 className="w-3 h-3" /> {docList.length}
+                                          </span>
+                                        ) : (
+                                          <span className="text-[10px] font-bold px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded-full">
+                                            Pendiente
+                                          </span>
+                                        )}
+                                      </div>
+
                                       {isPresent ? (
-                                        <span className="text-[10px] font-bold px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-full flex items-center gap-0.5">
-                                          <CheckCircle2 className="w-3 h-3" /> {docList.length}
-                                        </span>
+                                        <div className="space-y-1 mt-2 max-h-24 overflow-y-auto">
+                                          {docList.map(doc => (
+                                            <a 
+                                              key={doc.id}
+                                              href={doc.link} 
+                                              target="_blank" 
+                                              rel="noreferrer"
+                                              className="text-[11px] text-slate-700 hover:text-blue-600 block truncate flex items-center gap-1 bg-white p-1 rounded border border-slate-100"
+                                              title={doc.name}
+                                            >
+                                              <FileText className="w-3 h-3 text-blue-500 shrink-0" />
+                                              <span className="truncate">{doc.name}</span>
+                                            </a>
+                                          ))}
+                                        </div>
                                       ) : (
-                                        <span className="text-[10px] font-bold px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded-full">
-                                          Pendiente
-                                        </span>
+                                        <p className="text-[11px] text-slate-400 italic mt-1">Sin archivos</p>
                                       )}
                                     </div>
 
-                                    {isPresent ? (
-                                      <div className="space-y-1 mt-2 max-h-24 overflow-y-auto">
-                                        {docList.map(doc => (
-                                          <a 
-                                            key={doc.id}
-                                            href={doc.link} 
-                                            target="_blank" 
-                                            rel="noreferrer"
-                                            className="text-[11px] text-slate-700 hover:text-blue-600 block truncate flex items-center gap-1 bg-white p-1 rounded border border-slate-100"
-                                            title={doc.name}
-                                          >
-                                            <FileText className="w-3 h-3 text-blue-500 shrink-0" />
-                                            <span className="truncate">{doc.name}</span>
-                                          </a>
-                                        ))}
-                                      </div>
-                                    ) : (
-                                      <p className="text-[11px] text-slate-400 italic mt-1">Sin archivos</p>
+                                    {currentUser.role === 'superadmin' && (
+                                      <button 
+                                        onClick={() => {
+                                          setEditDocModal({
+                                            open: true,
+                                            enterpriseId: ent.id,
+                                            centreId: centre.id,
+                                            categoryKey: key,
+                                            categoryLabel: `${centre.name} - ${fullName} (${label})`
+                                          });
+                                          setNewLinkUrl('');
+                                          setNewLinkName('');
+                                        }}
+                                        className="w-full py-1.5 bg-white border border-slate-200 text-slate-600 text-[11px] font-medium rounded hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition flex items-center justify-center gap-1"
+                                      >
+                                        <Plus className="w-3 h-3" /> Gestionar
+                                      </button>
                                     )}
                                   </div>
-
-                                  {currentUser.role === 'superadmin' && (
-                                    <button 
-                                      onClick={() => {
-                                        setEditDocModal({
-                                          open: true,
-                                          enterpriseId: ent.id,
-                                          centreId: centre.id,
-                                          categoryKey: key,
-                                          categoryLabel: `${centre.name} - ${fullName} (${label})`
-                                        });
-                                        setNewLinkUrl('');
-                                        setNewLinkName('');
-                                      }}
-                                      className="w-full py-1.5 bg-white border border-slate-200 text-slate-600 text-[11px] font-medium rounded hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition flex items-center justify-center gap-1"
-                                    >
-                                      <Plus className="w-3 h-3" /> Gestionar
-                                    </button>
-                                  )}
-                                </div>
-                              );
-                            })}
+                                );
+                              })}
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -534,7 +580,7 @@ export default function App() {
           <div className="space-y-6">
             <div>
               <h2 className="text-xl font-bold text-slate-800">Documentación General de PRL</h2>
-              <p className="text-sm text-slate-500">Procedimientos, normas y protocolos comunes a toda la organización.</p>
+              <p className="text-sm text-slate-500">Procedimientos, normas y protocolos comunes a toda la organización (Acceso libre).</p>
             </div>
 
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -566,42 +612,6 @@ export default function App() {
                         >
                           Ver archivo <ExternalLink className="w-3 h-3" />
                         </a>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'users' && currentUser.role === 'superadmin' && (
-          <div className="space-y-6">
-            <div>
-              <h2 className="text-xl font-bold text-slate-800">Usuarios Registrados</h2>
-              <p className="text-sm text-slate-500">Listado de perfiles y credenciales.</p>
-            </div>
-
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              <table className="w-full text-left text-sm text-slate-600">
-                <thead className="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b">
-                  <tr>
-                    <th className="px-6 py-3">Nombre</th>
-                    <th className="px-6 py-3">Usuario</th>
-                    <th className="px-6 py-3">Contraseña</th>
-                    <th className="px-6 py-3">Rol</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {users.map((u) => (
-                    <tr key={u.id} className="hover:bg-slate-50">
-                      <td className="px-6 py-4 font-medium text-slate-800">{u.name}</td>
-                      <td className="px-6 py-4">{u.email}</td>
-                      <td className="px-6 py-4 font-mono text-xs text-slate-600">{u.code}</td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2 py-1 text-xs font-semibold rounded ${u.role === 'superadmin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                          {u.role}
-                        </span>
                       </td>
                     </tr>
                   ))}
