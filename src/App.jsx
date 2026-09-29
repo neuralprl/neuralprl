@@ -5,22 +5,19 @@ import {
   Users, 
   AlertTriangle, 
   CheckCircle2, 
-  XCircle, 
   Search, 
   ExternalLink, 
   LogOut, 
   Plus, 
   FolderOpen,
-  ChevronRight,
   ShieldCheck,
   FileSpreadsheet,
   Trash2,
   Link as LinkIcon,
-  ChevronDown
+  Upload
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
-// Superadministrador inicial
 const INITIAL_USERS = [
   { id: '1', email: 'neuralprl', code: 'Neuralprl@', name: 'Superadministrador', role: 'superadmin', assignedCentres: ['ALL'] }
 ];
@@ -30,7 +27,6 @@ const INITIAL_GENERAL_DOCS = [
   { id: 'gd2', title: 'Protocolo de Actuación Accidentes Laborales', category: 'Protocolos', link: 'https://sharepoint.com/doc2', date: '2026-02-01' },
 ];
 
-// Estructura actualizada con Grupos (EMPRESA) y Centros con las 5 categorías exactas
 const INITIAL_ENTERPRISES = [
   {
     id: 'ent_1',
@@ -41,43 +37,7 @@ const INITIAL_ENTERPRISES = [
       {
         id: 'c1',
         name: 'Centro Neural Madrid - Castellana',
-        docs: {
-          er: [{ id: 'd1', name: 'Evaluacion_Riesgos_Madrid.pdf', link: 'https://sharepoint.com/eval-madrid.pdf' }],
-          ir: [{ id: 'd2', name: 'Info_Riesgos_Madrid.pdf', link: 'https://sharepoint.com/info-madrid.pdf' }],
-          pap: [],
-          epis: [],
-          me: []
-        }
-      },
-      {
-        id: 'c2',
-        name: 'Centro Neural Barcelona - Diagonal',
-        docs: {
-          er: [],
-          ir: [],
-          pap: [],
-          epis: [],
-          me: []
-        }
-      }
-    ]
-  },
-  {
-    id: 'ent_2',
-    name: 'Grupo Hospitalario Neural',
-    zone: 'Levante',
-    users: ['neuralprl'],
-    centres: [
-      {
-        id: 'c3',
-        name: 'Centro Neural Valencia - Mestalla',
-        docs: {
-          er: [{ id: 'd3', name: 'Evaluacion_Mestalla.pdf', link: 'https://sharepoint.com/eval-valencia.pdf' }],
-          ir: [],
-          pap: [],
-          epis: [],
-          me: [{ id: 'd4', name: 'Plan_Emergencia_Valencia.pdf', link: 'https://sharepoint.com/emerg-valencia.pdf' }]
-        }
+        docs: { er: [], ir: [], pap: [], epis: [], me: [] }
       }
     ]
   }
@@ -96,9 +56,7 @@ const extractFileNameFromUrl = (url) => {
   try {
     const parsed = new URL(url);
     const filename = parsed.pathname.split('/').pop();
-    if (filename && filename.length > 0) {
-      return decodeURIComponent(filename);
-    }
+    if (filename && filename.length > 0) return decodeURIComponent(filename);
   } catch (e) {
     const parts = url.split('/');
     const last = parts.pop() || parts.pop();
@@ -136,12 +94,8 @@ export default function App() {
     const user = users.find(
       u => u.email.trim() === loginEmail.trim() && u.code.trim() === loginCode.trim()
     );
-
-    if (user) {
-      setCurrentUser(user);
-    } else {
-      setLoginError('Usuario o contraseña incorrectos.');
-    }
+    if (user) setCurrentUser(user);
+    else setLoginError('Usuario o contraseña incorrectos.');
   };
 
   const handleLogout = () => {
@@ -155,6 +109,58 @@ export default function App() {
     if (currentUser.role === 'superadmin') return enterprises;
     return enterprises.filter(ent => ent.users.includes(currentUser.email));
   }, [currentUser, enterprises]);
+
+  // Función para procesar el Excel exportado de la lista de SharePoint CENTROS NEURAL
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws);
+
+        const enterpriseMap = {};
+
+        data.forEach((row, index) => {
+          const empresaName = row['EMPRESA'] || row['Empresa'] || row['empresa'] || 'Sin Empresa Asignada';
+          const centroName = row['Centro trabajo'] || row['Centro Trabajo'] || row['centro trabajo'] || row['Title'] || `Centro ${index + 1}`;
+
+          if (!enterpriseMap[empresaName]) {
+            enterpriseMap[empresaName] = {
+              id: `ent_imported_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+              name: empresaName,
+              zone: 'General',
+              users: ['neuralprl'],
+              centres: []
+            };
+          }
+
+          enterpriseMap[empresaName].centres.push({
+            id: `c_imported_${Date.now()}_${index}`,
+            name: centroName,
+            docs: { er: [], ir: [], pap: [], epis: [], me: [] }
+          });
+        });
+
+        const newEnterprisesList = Object.values(enterpriseMap);
+        if (newEnterprisesList.length > 0) {
+          setEnterprises(newEnterprisesList);
+          alert(`¡Importación exitosa! Se han cargado ${newEnterprisesList.length} empresas y sus centros.`);
+        } else {
+          alert('No se han encontrado columnas válidas de EMPRESA o Centro trabajo en el archivo.');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Hubo un error al leer el archivo Excel.');
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
 
   const handleUrlChange = (url) => {
     setNewLinkUrl(url);
@@ -279,10 +285,6 @@ export default function App() {
               Iniciar Sesión
             </button>
           </form>
-
-          <div className="text-xs text-center text-slate-400 border-t pt-4">
-            Acceso restringido a personal autorizado por la empresa.
-          </div>
         </div>
       </div>
     );
@@ -301,7 +303,14 @@ export default function App() {
           </div>
 
           <div className="flex items-center space-x-4">
-            <div className="text-right hidden sm:block">
+            {/* Botón destacado para importar el Excel de SharePoint */}
+            <label className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition shadow-lg border border-blue-500">
+              <Upload className="w-4 h-4" />
+              <span>Importar Excel CENTROS NEURAL</span>
+              <input type="file" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} className="hidden" />
+            </label>
+
+            <div className="text-right hidden sm:block border-l border-slate-700 pl-4">
               <p className="text-sm font-medium">{currentUser.name}</p>
               <span className="text-xs bg-blue-900 text-blue-200 px-2 py-0.5 rounded capitalize">
                 {currentUser.role}
@@ -385,7 +394,7 @@ export default function App() {
                         <Building2 className="w-5 h-5 text-blue-400" />
                         <div>
                           <h3 className="font-bold text-lg">{ent.name}</h3>
-                          <span className="text-xs text-slate-300">Zona: {ent.zone}</span>
+                          <span className="text-xs text-slate-300">Empresa / Grupo</span>
                         </div>
                       </div>
                       <span className="text-xs bg-slate-700 px-3 py-1 rounded-full text-blue-200 font-medium">
@@ -596,11 +605,11 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Nombre del Archivo (Autodetectado o personalizado)</label>
+                <label className="block text-xs text-slate-500 mb-1">Nombre del Archivo</label>
                 <input 
                   type="text" 
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Ej. Planificacion_Preventiva.pdf"
+                  placeholder="Ej. Evaluacion.pdf"
                   value={newLinkName}
                   onChange={(e) => setNewLinkName(e.target.value)}
                 />
