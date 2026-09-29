@@ -543,39 +543,39 @@ export default function App() {
                               <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 shrink-0" />
                             </a>
                           ))}
-                        </div>
+                      </div>
                       ) : (
                         <p className="text-xs text-rose-500 italic bg-rose-50 p-3 rounded border border-rose-100">
                           Sin documentos vinculados en esta categoría.
                         </p>
                       )}
-                    </div>
-
-                    <div className="space-y-2 pt-2 border-t border-slate-100">
-                      {currentUser.role === 'superadmin' && (
-                        <button 
-                          onClick={() => {
-                            setEditDocModal({
-                              open: true,
-                              centreId: currentSelectedCentre.id,
-                              categoryKey: key,
-                              categoryLabel: label
-                            });
-                            setNewLinkUrl('');
-                            setNewLinkName('');
-                          }}
-                          className="w-full py-2 px-3 bg-slate-100 text-slate-700 font-medium text-xs rounded-lg hover:bg-slate-200 transition flex items-center justify-center gap-1.5"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>Gestionar / Añadir Enlaces</span>
-                        </button>
-                      )}
-                    </div>
                   </div>
-                );
-              })}
-            </div>
+
+                  <div className="space-y-2 pt-2 border-t border-slate-100">
+                    {currentUser.role === 'superadmin' && (
+                      <button 
+                        onClick={() => {
+                          setEditDocModal({
+                            open: true,
+                            centreId: currentSelectedCentre.id,
+                            categoryKey: key,
+                            categoryLabel: label
+                          });
+                          setNewLinkUrl('');
+                          setNewLinkName('');
+                        }}
+                        className="w-full py-2 px-3 bg-slate-100 text-slate-700 font-medium text-xs rounded-lg hover:bg-slate-200 transition flex items-center justify-center gap-1.5"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Gestionar / Añadir Enlaces</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
+        </div>
         )}
 
         {activeTab === 'general' && (
@@ -686,10 +686,10 @@ export default function App() {
                       </td>
                     </tr>
                   ))}
-                </tbody>
-              </table>
-            </div>
+              </tbody>
+            </table>
           </div>
+        </div>
         )}
       </main>
 
@@ -749,39 +749,26 @@ export default function App() {
               </button>
             </form>
 
-            {/* Lista de enlaces existentes */}
+            {/* Listado de enlaces existentes para poder borrarlos */}
             <div className="flex-1 overflow-y-auto space-y-2">
-              <span className="text-xs font-bold text-slate-700 uppercase block">Enlaces Guardados</span>
-              
+              <span className="text-xs font-bold text-slate-700 uppercase block">Enlaces actuales en esta categoría</span>
               {(() => {
-                const centre = centres.find(c => c.id === editDocModal.centreId);
-                const docList = centre && Array.isArray(centre.docs[editDocModal.categoryKey]) 
-                  ? centre.docs[editDocModal.categoryKey] 
-                  : [];
-
-                if (docList.length === 0) {
-                  return (
-                    <p className="text-xs text-slate-400 text-center py-4 italic border border-dashed rounded-lg">
-                      No hay enlaces guardados en esta categoría.
-                    </p>
-                  );
+                const targetCentre = centres.find(c => c.id === editDocModal.centreId);
+                const list = targetCentre && targetCentre.docs[editDocModal.categoryKey] ? targetCentre.docs[editDocModal.categoryKey] : [];
+                
+                if (list.length === 0) {
+                  return <p className="text-xs text-slate-400 italic">No hay enlaces guardados todavía.</p>;
                 }
 
-                return docList.map(doc => (
-                  <div key={doc.id} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg text-xs shadow-sm">
+                return list.map(doc => (
+                  <div key={doc.id} className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs">
                     <div className="flex items-center space-x-2 truncate pr-2">
                       <FileText className="w-4 h-4 text-blue-600 shrink-0" />
-                      <div className="truncate">
-                        <p className="font-semibold text-slate-800 truncate">{doc.name}</p>
-                        <a href={doc.link} target="_blank" rel="noreferrer" className="text-slate-400 hover:text-blue-600 truncate block text-[10px]">
-                          {doc.link}
-                        </a>
-                      </div>
+                      <span className="font-medium text-slate-700 truncate">{doc.name}</span>
                     </div>
-
                     <button 
                       onClick={() => handleDeleteLink(doc.id)}
-                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition shrink-0"
+                      className="text-rose-500 hover:text-rose-700 p-1"
                       title="Eliminar enlace"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -791,10 +778,10 @@ export default function App() {
               })()}
             </div>
 
-            <div className="flex justify-end pt-3 border-t">
-              <button 
+            <div className="border-t pt-3 flex justify-end">
+              <button
                 onClick={() => setEditDocModal({ open: false, centreId: null, categoryKey: null, categoryLabel: '' })}
-                className="px-4 py-2 text-xs font-medium bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition"
+                className="px-4 py-2 bg-slate-200 text-slate-700 text-xs font-medium rounded-lg hover:bg-slate-300 transition"
               >
                 Cerrar
               </button>
